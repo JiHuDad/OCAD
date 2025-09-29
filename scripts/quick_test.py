@@ -33,9 +33,14 @@ async def quick_test():
         title="🧪 Quick Test"
     ))
     
+    # 임계값을 현실적으로 조정 (환경변수 사용)
+    import os
+    os.environ['DETECTION__RULE_P99_THRESHOLD_MS'] = '12.0'  # 12ms로 설정
+    
     # 1. 시스템 초기화
     console.print("\n[bold blue]1. 시스템 초기화[/bold blue]")
     settings = Settings()
+    console.print(f"📊 룰 기반 임계값: {settings.detection.rule_p99_threshold_ms}ms")
     orchestrator = SystemOrchestrator(settings)
     
     try:

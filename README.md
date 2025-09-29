@@ -28,8 +28,8 @@ O-RU/O-DU → Capability Detector → Collectors → Feature Engine → Detector
 
 ```bash
 # 가상환경 생성
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 
 # 의존성 설치
 pip install -r requirements.txt
@@ -59,6 +59,23 @@ python -m ocad.cli simulate --count 10 --duration 300
 
 # 또는 스크립트 사용
 ./scripts/simulate.py
+```
+
+### 환경 설정
+
+환경변수를 통해 시스템 설정을 변경할 수 있습니다:
+
+```bash
+# .env 파일 생성 (선택사항)
+cat > .env << EOF
+ENVIRONMENT=development
+DEBUG=true
+API_HOST=0.0.0.0
+API_PORT=8080
+DATABASE__URL=postgresql+asyncpg://ocad:ocad@localhost:5432/ocad
+REDIS__URL=redis://localhost:6379/0
+MONITORING__LOG_LEVEL=INFO
+EOF
 ```
 
 ## 주요 컴포넌트

@@ -5,7 +5,7 @@ from typing import Optional
 import xml.etree.ElementTree as ET
 
 from ncclient import manager
-from ncclient.operations.errors import RPCError
+from ncclient.operations.errors import OperationError as RPCError
 
 from ..core.models import Capabilities, Endpoint, MetricSample
 from .base import BaseCollector

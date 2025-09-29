@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Set
 
 import structlog
 from ncclient import manager
-from ncclient.operations.errors import RPCError
+from ncclient.operations.errors import OperationError as RPCError
 
 from ..core.config import NetconfConfig
 from ..core.logging import get_logger, log_function_call

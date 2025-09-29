@@ -8,7 +8,7 @@ import time
 from typing import Optional
 
 from ncclient import manager
-from ncclient.operations.errors import RPCError
+from ncclient.operations.errors import OperationError as RPCError
 
 from ..core.models import Capabilities, Endpoint, MetricSample
 from .base import BaseCollector

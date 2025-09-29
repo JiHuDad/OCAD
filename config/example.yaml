@@ -1,0 +1,65 @@
+# OCAD Configuration Example
+# Save as config/local.yaml
+
+environment: "development"
+debug: true
+
+api_host: "0.0.0.0"
+api_port: 8080
+api_workers: 1
+
+database:
+  url: "postgresql+asyncpg://ocad:ocad@localhost:5432/ocad"
+  pool_size: 10
+  max_overflow: 20
+  echo: false
+
+redis:
+  url: "redis://localhost:6379/0"
+  max_connections: 10
+
+kafka:
+  bootstrap_servers: ["localhost:9092"]
+  group_id: "ocad"
+  auto_offset_reset: "latest"
+
+netconf:
+  timeout: 30
+  port: 830
+  username: "admin"
+  password: "admin"
+  hostkey_verify: false
+
+feature:
+  window_size_minutes: 1
+  overlap_seconds: 30
+  percentiles: [95, 99]
+  ewma_alpha: 0.3
+  cusum_threshold: 5.0
+
+detection:
+  rule_weight: 0.35
+  changepoint_weight: 0.25
+  residual_weight: 0.30
+  multivariate_weight: 0.10
+  
+  rule_timeout_ms: 5000.0
+  rule_p99_threshold_ms: 100.0
+  cusum_threshold: 5.0
+  residual_threshold: 3.0
+  
+  hold_down_seconds: 120
+  dedup_window_seconds: 300
+
+alert:
+  evidence_count: 3
+  min_evidence_for_alert: 2
+  severity_buckets:
+    critical: 0.8
+    warning: 0.6
+    info: 0.4
+
+monitoring:
+  prometheus_port: 8000
+  log_level: "INFO"
+  enable_tracing: true

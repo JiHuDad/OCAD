@@ -98,6 +98,16 @@ class RuleBasedDetector(BaseDetector):
         if total_checks > 0:
             score = violations / total_checks
         
+        # Debug log for score calculation
+        if score > 0:
+            self.logger.debug(
+                "Rule-based score calculated",
+                endpoint_id=features.endpoint_id,
+                violations=violations,
+                total_checks=total_checks,
+                score=score,
+            )
+        
         return min(1.0, score)
     
     def get_evidence(self, features: FeatureVector) -> Dict[str, float]:

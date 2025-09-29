@@ -82,9 +82,20 @@ class AlertManager:
         # Generate evidence
         evidence = self._generate_evidence(score, features, capabilities)
         
+        # Debug: always log evidence count
+        self.logger.info(
+            "Evidence check",
+            endpoint_id=endpoint_id,
+            evidence_count=len(evidence),
+            min_required=self.alert_config.min_evidence_for_alert,
+            rule_score=score.rule_score,
+            changepoint_score=score.changepoint_score,
+            composite_score=score.composite_score,
+        )
+        
         # Check evidence threshold
         if len(evidence) < self.alert_config.min_evidence_for_alert:
-            self.logger.debug(
+            self.logger.info(
                 "Insufficient evidence for alert",
                 endpoint_id=endpoint_id,
                 evidence_count=len(evidence),
@@ -105,6 +116,9 @@ class AlertManager:
         # Track for deduplication
         self.last_alert_times[endpoint_id] = current_time
         self.recent_alerts[endpoint_id].append(alert)
+        
+        # Add to active alerts
+        self.active_alerts[alert.id] = alert
         
         # Apply hold-down suppression
         self.suppressed_endpoints[endpoint_id] = current_time + self.detection_config.hold_down_seconds

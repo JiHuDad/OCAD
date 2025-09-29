@@ -89,24 +89,37 @@ async def quick_test():
         ) as progress:
             task = progress.add_task("데이터 처리 중...", total=None)
             
-            # 60초간 데이터 생성 및 처리
+            # 수집기 중지 (시뮬레이션 모드로 전환)
+            await orchestrator.collector_manager.stop()
+            console.print("🔄 실제 수집기 중지, 시뮬레이션 모드로 전환")
+            
+            # 150초간 데이터 생성 및 처리 (윈도우 크기보다 충분히 긴 시간)
             start_time = time.time()
-            while time.time() - start_time < 60:
+            sample_count = 0
+            anomaly_injected = False
+            
+            while time.time() - start_time < 150:
                 for synthetic_ep in synthetic_endpoints:
                     # 합성 샘플 생성
                     sample = synthetic_ep.generate_sample()
                     
-                    # 시스템으로 처리
+                    # 시스템으로 직접 처리
                     await orchestrator._process_sample(sample)
                     results["samples_processed"] += 1
+                    sample_count += 1
                 
-                # 30초 후 이상 상황 주입
-                if time.time() - start_time > 30 and time.time() - start_time < 35:
-                    # 첫 번째 엔드포인트에 지연 스파이크 주입
-                    synthetic_endpoints[0].inject_anomaly("latency_spike", 2.5, 60)
-                    console.print("🔥 이상 상황 주입: 지연 스파이크 (2.5배)")
+                # 75초 후 이상 상황 주입 (한 번만)
+                if not anomaly_injected and time.time() - start_time > 75:
+                    # 첫 번째 엔드포인트에 강한 지연 스파이크 주입
+                    synthetic_endpoints[0].inject_anomaly("latency_spike", 3.0, 120)
+                    console.print("🔥 이상 상황 주입: 강한 지연 스파이크 (3.0배)")
+                    anomaly_injected = True
                 
-                await asyncio.sleep(1)  # 1초마다 샘플 생성
+                # 진행 상황 표시
+                if sample_count % 10 == 0:
+                    progress.update(task, description=f"샘플 처리 중... ({sample_count}개)")
+                
+                await asyncio.sleep(0.5)  # 0.5초마다 샘플 생성 (더 빠른 데이터 생성)
         
         # 4. 결과 요약
         console.print("\n[bold blue]4. 테스트 결과 요약[/bold blue]")

@@ -128,6 +128,7 @@ class FeatureExtractor:
             features.udp_echo_slope = self._calculate_slope(udp_echo_series)
             features.udp_echo_ewma = self._calculate_ewma(udp_echo_series)
             features.cusum_udp_echo = self._calculate_cusum(udp_echo_series)
+            self.logger.debug("UDP Echo CUSUM", series_len=len(udp_echo_series), cusum=features.cusum_udp_echo)
         
         # eCPRI features
         if ecpri_series:
@@ -136,6 +137,7 @@ class FeatureExtractor:
             features.ecpri_slope = self._calculate_slope(ecpri_series)
             features.ecpri_ewma = self._calculate_ewma(ecpri_series)
             features.cusum_ecpri = self._calculate_cusum(ecpri_series)
+            self.logger.debug("eCPRI CUSUM", series_len=len(ecpri_series), cusum=features.cusum_ecpri)
         
         # LBM features
         if lbm_rtt_series:
@@ -144,6 +146,7 @@ class FeatureExtractor:
             features.lbm_slope = self._calculate_slope(lbm_rtt_series)
             features.lbm_ewma = self._calculate_ewma(lbm_rtt_series)
             features.cusum_lbm = self._calculate_cusum(lbm_rtt_series)
+            self.logger.debug("LBM CUSUM", series_len=len(lbm_rtt_series), cusum=features.cusum_lbm)
         
         # Run-length features
         if lbm_success_series is not None:
@@ -259,7 +262,7 @@ class FeatureExtractor:
         Returns:
             CUSUM value or None
         """
-        if len(values) < 3:
+        if len(values) < 2:  # 최소 2개 포인트로 줄임
             return None
         
         try:
@@ -274,7 +277,7 @@ class FeatureExtractor:
             normalized = [(v - mean_val) / std_val for v in values]
             
             # Calculate CUSUM
-            threshold = self.config.cusum_threshold / 10.0  # Scale down for normalized data
+            threshold = self.config.cusum_threshold / 50.0  # Scale down more for normalized data
             cusum_pos = 0.0
             cusum_neg = 0.0
             max_cusum = 0.0
@@ -284,8 +287,19 @@ class FeatureExtractor:
                 cusum_neg = max(0, cusum_neg - value - threshold)
                 max_cusum = max(max_cusum, cusum_pos, cusum_neg)
             
+            # Debug log for CUSUM calculation (always log for debugging)
+            self.logger.debug(
+                "CUSUM calculated",
+                values_count=len(values),
+                mean=mean_val,
+                std=std_val,
+                threshold=threshold,
+                max_cusum=max_cusum,
+            )
+            
             return float(max_cusum)
-        except Exception:
+        except Exception as e:
+            self.logger.debug("CUSUM calculation failed", error=str(e))
             return None
     
     def _calculate_failure_runlength(self, success_values: List[bool]) -> Optional[int]:

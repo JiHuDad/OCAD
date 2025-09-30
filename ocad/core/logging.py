@@ -9,18 +9,48 @@ import structlog
 from structlog.types import Processor
 
 
-def configure_logging(log_level: str = "INFO", enable_json: bool = True) -> None:
+def configure_logging(log_level: str = "INFO", enable_json: bool = True, 
+                     log_dir: str = None) -> None:
     """Configure structured logging for the application.
     
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         enable_json: Whether to use JSON formatting
+        log_dir: Directory for log files (if None, only console logging)
     """
+    # Clear existing handlers
+    logging.getLogger().handlers.clear()
+    
     # Configure standard library logging
+    handlers = []
+    
+    # Console handler for summary logs
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)  # Only INFO and above to console
+    handlers.append(console_handler)
+    
+    # File handlers if log_dir is provided
+    if log_dir:
+        import os
+        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(f"{log_dir}/debug", exist_ok=True)
+        os.makedirs(f"{log_dir}/summary", exist_ok=True)
+        os.makedirs(f"{log_dir}/alerts", exist_ok=True)
+        
+        # Debug log file (all levels)
+        debug_handler = logging.FileHandler(f"{log_dir}/debug/detailed.log")
+        debug_handler.setLevel(logging.DEBUG)
+        handlers.append(debug_handler)
+        
+        # Summary log file (INFO and above)
+        summary_handler = logging.FileHandler(f"{log_dir}/summary/summary.log")
+        summary_handler.setLevel(logging.INFO)
+        handlers.append(summary_handler)
+    
     logging.basicConfig(
         format="%(message)s",
-        stream=sys.stdout,
         level=getattr(logging, log_level.upper()),
+        handlers=handlers
     )
     
     # Disable some noisy loggers

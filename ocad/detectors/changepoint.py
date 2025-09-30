@@ -49,7 +49,7 @@ class ChangePointDetector(BaseDetector):
             max_cusum = max(max_cusum, features.cusum_udp_echo)
             cusum_count += 1
             
-            if features.cusum_udp_echo > self.config.cusum_threshold:
+            if features.cusum_udp_echo > self.config.cusum_threshold / 50.0:
                 self.logger.debug(
                     "UDP echo CUSUM 임계값 초과",
                     endpoint_id=features.endpoint_id,
@@ -61,7 +61,7 @@ class ChangePointDetector(BaseDetector):
             max_cusum = max(max_cusum, features.cusum_ecpri)
             cusum_count += 1
             
-            if features.cusum_ecpri > self.config.cusum_threshold:
+            if features.cusum_ecpri > self.config.cusum_threshold / 50.0:
                 self.logger.debug(
                     "eCPRI CUSUM 임계값 초과",
                     endpoint_id=features.endpoint_id,
@@ -73,7 +73,7 @@ class ChangePointDetector(BaseDetector):
             max_cusum = max(max_cusum, features.cusum_lbm)
             cusum_count += 1
             
-            if features.cusum_lbm > self.config.cusum_threshold:
+            if features.cusum_lbm > self.config.cusum_threshold / 50.0:
                 self.logger.debug(
                     "LBM CUSUM 임계값 초과",
                     endpoint_id=features.endpoint_id,
@@ -82,11 +82,29 @@ class ChangePointDetector(BaseDetector):
                 )
         
         if cusum_count == 0:
+            self.logger.debug(
+                "No CUSUM values available",
+                endpoint_id=features.endpoint_id,
+                udp_echo_cusum=features.cusum_udp_echo,
+                ecpri_cusum=features.cusum_ecpri,
+                lbm_cusum=features.cusum_lbm,
+            )
             return 0.0
         
         # 임계값 기반으로 점수 정규화
-        # 임계값에서 0.0, CUSUM이 증가하면 1.0에 접근
-        score = min(1.0, max_cusum / (self.config.cusum_threshold * 2.0))
+        # 임계값에서 0.0, CUSUM이 증가하면 1.0에 접근 (스케일링 적용)
+        scaled_threshold = self.config.cusum_threshold / 50.0
+        score = min(1.0, max_cusum / (scaled_threshold * 2.0))
+        
+        # Debug log for score calculation
+        if score > 0:
+            self.logger.debug(
+                "Changepoint score calculated",
+                endpoint_id=features.endpoint_id,
+                max_cusum=max_cusum,
+                threshold=self.config.cusum_threshold,
+                score=score,
+            )
         
         return score
     

@@ -70,8 +70,8 @@ class SyntheticEndpoint:
         if role == EndpointRole.O_RU:
             return Capabilities(
                 udp_echo=True,
-                ecpri_delay=random.choice([True, False]),  # Not all O-RUs support this
-                lbm=random.choice([True, False]),
+                ecpri_delay=True,  # Enable for testing
+                lbm=True,  # Enable for testing
                 ccm_min=random.choice([True, False]),
                 lldp=True,
             )

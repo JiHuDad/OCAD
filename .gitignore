@@ -150,6 +150,10 @@ db_data/
 # Logs
 logs/
 *.log
+logs/test_*/
+logs/debug/
+logs/summary/
+logs/alerts/
 log/
 
 # Runtime data

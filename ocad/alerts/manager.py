@@ -204,26 +204,28 @@ class AlertManager:
         """
         evidence = []
         
-        # Rule-based evidence
-        if score.rule_score > 0.3:
+        # Rule-based evidence with detailed analysis
+        if score.rule_score > 0.1:
+            rule_details = self._analyze_rule_violations(features, capabilities)
             evidence.append(AlertEvidence(
                 type="rule",
                 value=score.rule_score,
-                description=f"Rule violations detected (score: {score.rule_score:.2f})",
+                description=f"Rule violations: {rule_details} (score: {score.rule_score:.2f})",
                 confidence=0.9,
             ))
         
-        # Change point evidence
-        if score.changepoint_score > 0.3:
+        # Change point evidence with detailed analysis
+        if score.changepoint_score > 0.1:
+            cusum_details = self._analyze_cusum_changes(features, capabilities)
             evidence.append(AlertEvidence(
                 type="spike",
                 value=score.changepoint_score,
-                description=f"Sudden change detected (CUSUM score: {score.changepoint_score:.2f})",
+                description=f"Sudden changes: {cusum_details} (CUSUM score: {score.changepoint_score:.2f})",
                 confidence=0.8,
             ))
         
         # Residual evidence (drift)
-        if score.residual_score > 0.3:
+        if score.residual_score > 0.2:
             evidence.append(AlertEvidence(
                 type="drift",
                 value=score.residual_score,
@@ -232,7 +234,7 @@ class AlertManager:
             ))
         
         # Multivariate evidence (concurrent)
-        if score.multivariate_score > 0.3:
+        if score.multivariate_score > 0.2:
             evidence.append(AlertEvidence(
                 type="concurrent",
                 value=score.multivariate_score,
@@ -409,3 +411,299 @@ class AlertManager:
             "suppressed_endpoints": len(self.suppressed_endpoints),
             "total_recent_alerts": sum(len(alerts) for alerts in self.recent_alerts.values()),
         }
+    
+    def _analyze_rule_violations(self, features: FeatureVector, capabilities: Capabilities) -> str:
+        """알람의 룰 위반 원인을 상세 분석합니다.
+        
+        Args:
+            features: 피처 벡터
+            capabilities: 엔드포인트 기능
+            
+        Returns:
+            위반 원인 상세 설명
+        """
+        violations = []
+        threshold = self.detection_config.rule_p99_threshold_ms
+        
+        if capabilities.udp_echo and features.udp_echo_p99 is not None:
+            if features.udp_echo_p99 > threshold:
+                violations.append(f"UDP Echo P99 {features.udp_echo_p99:.1f}ms > {threshold}ms")
+        
+        if capabilities.ecpri_delay and features.ecpri_p99 is not None:
+            if features.ecpri_p99 > threshold:
+                violations.append(f"eCPRI P99 {features.ecpri_p99:.1f}ms > {threshold}ms")
+        
+        if capabilities.lbm and features.lbm_rtt_p99 is not None:
+            if features.lbm_rtt_p99 > threshold:
+                violations.append(f"LBM RTT P99 {features.lbm_rtt_p99:.1f}ms > {threshold}ms")
+        
+        if features.lbm_fail_runlen is not None and features.lbm_fail_runlen > self.detection_config.rule_runlength_threshold:
+            violations.append(f"LBM failures {features.lbm_fail_runlen} consecutive")
+        
+        return "; ".join(violations) if violations else "Unknown rule violations"
+    
+    def _analyze_cusum_changes(self, features: FeatureVector, capabilities: Capabilities) -> str:
+        """CUSUM 변화점 원인을 상세 분석합니다.
+        
+        Args:
+            features: 피처 벡터
+            capabilities: 엔드포인트 기능
+            
+        Returns:
+            변화점 원인 상세 설명
+        """
+        changes = []
+        threshold = self.detection_config.cusum_threshold / 50.0  # 스케일링 적용
+        
+        if capabilities.udp_echo and features.cusum_udp_echo is not None:
+            if features.cusum_udp_echo > threshold:
+                changes.append(f"UDP Echo CUSUM {features.cusum_udp_echo:.2f}")
+        
+        if capabilities.ecpri_delay and features.cusum_ecpri is not None:
+            if features.cusum_ecpri > threshold:
+                changes.append(f"eCPRI CUSUM {features.cusum_ecpri:.2f}")
+        
+        if capabilities.lbm and features.cusum_lbm is not None:
+            if features.cusum_lbm > threshold:
+                changes.append(f"LBM CUSUM {features.cusum_lbm:.2f}")
+        
+        return "; ".join(changes) if changes else "Unknown CUSUM changes"
+    
+    def generate_human_readable_report(self, alert: "Alert", features: FeatureVector, capabilities: Capabilities) -> str:
+        """사람이 이해하기 쉬운 알람 분석 보고서를 생성합니다.
+        
+        Args:
+            alert: 알람 객체
+            features: 피처 벡터
+            capabilities: 엔드포인트 기능
+            
+        Returns:
+            사람이 읽기 쉬운 분석 보고서
+        """
+        from datetime import datetime
+        
+        # 시간 변환
+        timestamp = datetime.fromtimestamp(alert.ts_ms / 1000.0)
+        
+        report = []
+        report.append("=" * 80)
+        report.append(f"🚨 OCAD 이상탐지 알람 분석 보고서")
+        report.append("=" * 80)
+        report.append("")
+        
+        # 기본 정보
+        report.append("📍 기본 정보")
+        report.append("-" * 40)
+        report.append(f"• 엔드포인트: {alert.endpoint_id}")
+        report.append(f"• 탐지 시간: {timestamp.strftime('%Y년 %m월 %d일 %H시 %M분 %S초')}")
+        report.append(f"• 심각도: {self._get_severity_description(alert.severity)}")
+        composite_score = alert.score_snapshot.composite_score if alert.score_snapshot else 0.0
+        report.append(f"• 종합 위험도: {composite_score:.1%} (1.0 = 100% 위험)")
+        report.append("")
+        
+        # 문제 요약
+        report.append("⚠️ 발견된 문제")
+        report.append("-" * 40)
+        problem_summary = self._generate_problem_summary(alert, features, capabilities)
+        for line in problem_summary:
+            report.append(f"• {line}")
+        report.append("")
+        
+        # 상세 기술 분석
+        report.append("🔍 상세 기술 분석")
+        report.append("-" * 40)
+        tech_analysis = self._generate_technical_analysis(alert, features, capabilities)
+        for line in tech_analysis:
+            report.append(f"  {line}")
+        report.append("")
+        
+        # 영향도 분석
+        report.append("📊 영향도 분석")
+        report.append("-" * 40)
+        impact_analysis = self._generate_impact_analysis(alert, features, capabilities)
+        for line in impact_analysis:
+            report.append(f"• {line}")
+        report.append("")
+        
+        # 권장 조치사항
+        report.append("💡 권장 조치사항")
+        report.append("-" * 40)
+        recommendations = self._generate_recommendations(alert, features, capabilities)
+        for i, rec in enumerate(recommendations, 1):
+            report.append(f"{i}. {rec}")
+        report.append("")
+        
+        # 모니터링 포인트
+        report.append("👀 지속 모니터링 포인트")
+        report.append("-" * 40)
+        monitoring_points = self._generate_monitoring_points(alert, features, capabilities)
+        for line in monitoring_points:
+            report.append(f"• {line}")
+        report.append("")
+        
+        report.append("=" * 80)
+        report.append("보고서 생성: OCAD (O-RAN CFM-Lite AI 이상탐지 시스템)")
+        report.append("=" * 80)
+        
+        return "\n".join(report)
+    
+    def _get_severity_description(self, severity) -> str:
+        """심각도를 사람이 이해하기 쉽게 설명합니다."""
+        descriptions = {
+            "critical": "🔴 심각 - 즉시 대응 필요",
+            "warning": "🟡 경고 - 주의 깊은 모니터링 필요", 
+            "info": "🔵 정보 - 참고용"
+        }
+        return descriptions.get(severity.value.lower(), f"🔘 {severity.value}")
+    
+    def _generate_problem_summary(self, alert, features: FeatureVector, capabilities: Capabilities) -> list:
+        """문제 요약을 생성합니다."""
+        problems = []
+        
+        # 네트워크 지연 문제
+        threshold = self.detection_config.rule_p99_threshold_ms
+        if capabilities.udp_echo and features.udp_echo_p99 and features.udp_echo_p99 > threshold:
+            delay = features.udp_echo_p99
+            if delay > threshold * 3:
+                problems.append(f"UDP Echo 응답시간이 매우 느림 ({delay:.1f}ms, 정상: {threshold}ms 이하)")
+            elif delay > threshold * 2:
+                problems.append(f"UDP Echo 응답시간이 느림 ({delay:.1f}ms, 정상: {threshold}ms 이하)")
+            else:
+                problems.append(f"UDP Echo 응답시간 지연 ({delay:.1f}ms, 정상: {threshold}ms 이하)")
+        
+        if capabilities.lbm and features.lbm_rtt_p99 and features.lbm_rtt_p99 > threshold:
+            delay = features.lbm_rtt_p99
+            problems.append(f"LBM 루프백 지연 증가 ({delay:.1f}ms, 정상: {threshold}ms 이하)")
+        
+        if capabilities.ecpri_delay and features.ecpri_p99 and features.ecpri_p99 > threshold:
+            delay = features.ecpri_p99
+            problems.append(f"eCPRI 지연 증가 ({delay:.1f}ms, 정상: {threshold}ms 이하)")
+        
+        # 급격한 변화 감지
+        cusum_threshold = self.detection_config.cusum_threshold / 50.0
+        if features.cusum_udp_echo and features.cusum_udp_echo > cusum_threshold:
+            problems.append("UDP Echo 성능이 급격히 변화함 (CUSUM 이상 탐지)")
+        
+        if features.cusum_lbm and features.cusum_lbm > cusum_threshold:
+            problems.append("LBM 루프백 성능이 급격히 변화함 (CUSUM 이상 탐지)")
+        
+        return problems if problems else ["알 수 없는 네트워크 이상이 감지됨"]
+    
+    def _generate_technical_analysis(self, alert, features: FeatureVector, capabilities: Capabilities) -> list:
+        """기술적 상세 분석을 생성합니다."""
+        analysis = []
+        
+        # 통계적 분석
+        analysis.append("📈 성능 지표 분석:")
+        if features.udp_echo_p95 and features.udp_echo_p99:
+            analysis.append(f"   UDP Echo - P95: {features.udp_echo_p95:.1f}ms, P99: {features.udp_echo_p99:.1f}ms")
+        if features.lbm_rtt_p95 and features.lbm_rtt_p99:
+            analysis.append(f"   LBM RTT - P95: {features.lbm_rtt_p95:.1f}ms, P99: {features.lbm_rtt_p99:.1f}ms")
+        
+        # CUSUM 분석
+        if any([features.cusum_udp_echo, features.cusum_ecpri, features.cusum_lbm]):
+            analysis.append("")
+            analysis.append("📊 변화점 탐지 (CUSUM) 분석:")
+            if features.cusum_udp_echo:
+                analysis.append(f"   UDP Echo 변화량: {features.cusum_udp_echo:.2f}")
+            if features.cusum_ecpri:
+                analysis.append(f"   eCPRI 변화량: {features.cusum_ecpri:.2f}")
+            if features.cusum_lbm:
+                analysis.append(f"   LBM 변화량: {features.cusum_lbm:.2f}")
+        
+        # 증거 강도 분석
+        analysis.append("")
+        analysis.append("🔍 탐지 알고리즘별 신뢰도:")
+        for evidence in alert.evidence:
+            confidence_desc = "매우 높음" if evidence.confidence > 0.8 else "높음" if evidence.confidence > 0.6 else "보통"
+            analysis.append(f"   {evidence.type.upper()} 탐지: {evidence.confidence:.0%} ({confidence_desc})")
+        
+        return analysis
+    
+    def _generate_impact_analysis(self, alert, features: FeatureVector, capabilities: Capabilities) -> list:
+        """영향도 분석을 생성합니다."""
+        impact = []
+        
+        # 서비스 영향도
+        if alert.severity.value.lower() == "critical":
+            impact.append("🔴 서비스에 심각한 영향을 미칠 수 있음")
+            impact.append("사용자 체감 품질 저하 가능성이 높음")
+        elif alert.severity.value.lower() == "warning":
+            impact.append("🟡 서비스 품질에 영향을 미칠 수 있음")
+            impact.append("지속될 경우 사용자 불만이 증가할 수 있음")
+        
+        # 네트워크 영향도
+        threshold = self.detection_config.rule_p99_threshold_ms
+        if features.udp_echo_p99 and features.udp_echo_p99 > threshold * 2:
+            impact.append("네트워크 연결성에 심각한 문제가 있을 가능성")
+        elif features.udp_echo_p99 and features.udp_echo_p99 > threshold:
+            impact.append("네트워크 성능 저하가 감지됨")
+        
+        # O-RAN 특화 영향도
+        if alert.endpoint_id.startswith("sim-o-ru"):
+            impact.append("O-RU 장비 문제로 무선 접속에 영향 가능")
+        elif alert.endpoint_id.startswith("sim-o-du"):
+            impact.append("O-DU 장비 문제로 기지국 처리 성능에 영향 가능")
+        elif "transport" in alert.endpoint_id:
+            impact.append("전송 구간 문제로 전체 네트워크에 영향 가능")
+        
+        return impact if impact else ["영향도를 정확히 판단하기 어려움"]
+    
+    def _generate_recommendations(self, alert, features: FeatureVector, capabilities: Capabilities) -> list:
+        """권장 조치사항을 생성합니다."""
+        recommendations = []
+        
+        # 즉시 조치사항
+        if alert.severity.value.lower() == "critical":
+            recommendations.append("즉시 네트워크 관리자에게 알림")
+            recommendations.append("해당 엔드포인트의 상세 진단 실시")
+        
+        # 네트워크 관련 조치
+        threshold = self.detection_config.rule_p99_threshold_ms
+        if features.udp_echo_p99 and features.udp_echo_p99 > threshold:
+            recommendations.append("네트워크 연결 상태 및 대역폭 확인")
+            recommendations.append("라우팅 경로 및 홉 수 점검")
+        
+        if features.lbm_rtt_p99 and features.lbm_rtt_p99 > threshold:
+            recommendations.append("CFM(Connectivity Fault Management) 설정 확인")
+            recommendations.append("이더넷 링크 상태 점검")
+        
+        # CUSUM 기반 조치
+        if any([features.cusum_udp_echo, features.cusum_ecpri, features.cusum_lbm]):
+            recommendations.append("최근 네트워크 설정 변경사항 검토")
+            recommendations.append("트래픽 패턴 변화 분석")
+        
+        # O-RAN 특화 조치
+        if alert.endpoint_id.startswith("sim-o-ru"):
+            recommendations.append("O-RU 하드웨어 상태 점검")
+            recommendations.append("무선 인터페이스 설정 확인")
+        elif alert.endpoint_id.startswith("sim-o-du"):
+            recommendations.append("O-DU 처리 용량 및 CPU 사용률 확인")
+            recommendations.append("베어러 설정 및 QoS 정책 검토")
+        
+        # 일반적 조치
+        recommendations.append("15분 후 상태 재확인")
+        recommendations.append("유사한 패턴의 알람이 다른 장비에서 발생하는지 확인")
+        
+        return recommendations
+    
+    def _generate_monitoring_points(self, alert, features: FeatureVector, capabilities: Capabilities) -> list:
+        """지속 모니터링 포인트를 생성합니다."""
+        points = []
+        
+        # 핵심 메트릭 모니터링
+        if capabilities.udp_echo:
+            points.append(f"UDP Echo 응답시간이 {self.detection_config.rule_p99_threshold_ms}ms 이하로 회복되는지 확인")
+        
+        if capabilities.lbm:
+            points.append("LBM 루프백 지연이 정상 범위로 돌아오는지 관찰")
+        
+        # 트렌드 모니터링
+        points.append("향후 30분간 동일한 패턴의 이상이 재발하는지 모니터링")
+        points.append("다른 엔드포인트에서 유사한 증상이 나타나는지 확인")
+        
+        # 비즈니스 영향 모니터링
+        points.append("사용자 불만 접수 현황 모니터링")
+        points.append("전체 네트워크 성능 지표 추이 관찰")
+        
+        return points

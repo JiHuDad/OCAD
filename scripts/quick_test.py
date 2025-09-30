@@ -36,10 +36,17 @@ async def quick_test():
         title="🧪 Quick Test"
     ))
     
-    # 로그 디렉토리 설정
+    # 로그 디렉토리 설정 (환경변수 또는 프로젝트 루트 기준)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = f"/home/finux/dev/OCAD/logs"
-    test_log_dir = f"{log_dir}/test_{timestamp}"
+    
+    # 환경변수 OCAD_LOG_DIR이 있으면 사용, 없으면 프로젝트 루트의 logs 디렉토리
+    if os.getenv('OCAD_LOG_DIR'):
+        log_dir = Path(os.getenv('OCAD_LOG_DIR'))
+    else:
+        project_root = Path(__file__).parent.parent  # scripts의 상위 디렉토리
+        log_dir = project_root / "logs"
+    
+    test_log_dir = log_dir / f"test_{timestamp}"
     
     # 로깅 설정
     configure_logging(log_level="DEBUG", enable_json=False, log_dir=test_log_dir)
@@ -218,8 +225,8 @@ async def quick_test():
             alert_table.add_column("탐지 원인", style="yellow", width=50)
             
             # 알람별 상세 로그 파일 생성
-            alert_log_file = f"{test_log_dir}/alerts/alert_details.log"
-            os.makedirs(f"{test_log_dir}/alerts", exist_ok=True)
+            alert_log_file = test_log_dir / "alerts" / "alert_details.log"
+            (test_log_dir / "alerts").mkdir(parents=True, exist_ok=True)
             
             with open(alert_log_file, 'w', encoding='utf-8') as f:
                 f.write(f"=== OCAD 알람 상세 분석 보고서 ({timestamp}) ===\n\n")
@@ -255,7 +262,7 @@ async def quick_test():
                     f.write("\n" + "="*60 + "\n\n")
                 
                 # 사람 친화적 상세 보고서 생성
-                human_report_file = f"{test_log_dir}/alerts/human_readable_analysis.txt"
+                human_report_file = test_log_dir / "alerts" / "human_readable_analysis.txt"
                 with open(human_report_file, 'w', encoding='utf-8') as f:
                     f.write("OCAD 이상탐지 시스템 - 사람 친화적 분석 보고서\n")
                     f.write("=" * 80 + "\n\n")

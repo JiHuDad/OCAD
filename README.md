@@ -75,21 +75,53 @@ API_PORT=8080
 DATABASE__URL=postgresql+asyncpg://ocad:ocad@localhost:5432/ocad
 REDIS__URL=redis://localhost:6379/0
 MONITORING__LOG_LEVEL=INFO
+
+# 로그 디렉토리 커스터마이징 (선택사항)
+OCAD_LOG_DIR=/var/log/ocad  # 기본값: <프로젝트루트>/logs
 EOF
+```
+
+### 로그 디렉토리 설정
+```bash
+# 기본값: 프로젝트 루트의 logs 디렉토리
+python3 scripts/quick_test.py
+
+# 커스텀 로그 디렉토리 사용
+export OCAD_LOG_DIR=/tmp/ocad_logs
+python3 scripts/quick_test.py
+
+# 시스템 로그 디렉토리 사용
+export OCAD_LOG_DIR=/var/log/ocad
+sudo mkdir -p /var/log/ocad
+sudo chown $USER:$USER /var/log/ocad
+python3 scripts/quick_test.py
+```
+
+### 📁 로그 구조
+테스트 실행 시 다음과 같은 구조로 로그가 생성됩니다:
+```
+logs/test_YYYYMMDD_HHMMSS/
+├── debug/detailed.log              # 🔍 모든 디버그 정보 (CUSUM 계산, 피처 추출 등)
+├── summary/summary.log             # 📋 중요 이벤트만 (시스템 시작/종료, 알람 등)
+└── alerts/
+    ├── alert_details.log           # 🚨 기술적 알람 정보
+    └── human_readable_analysis.txt # 📖 사람 친화적 분석 보고서
 ```
 
 ## 🧪 시스템 테스트 (실제 CFM 장비 없이)
 
 OCAD 시스템은 실제 ORAN 장비 없이도 완전한 검증이 가능합니다:
 
-### 1. 빠른 검증 테스트 (1분)
+### 1. 빠른 검증 테스트 (2분)
 ```bash
-# 시스템 기본 동작 확인
+# 시스템 기본 동작 확인 (구조화된 로그 포함)
 ./scripts/quick_test.py
 ```
 - ✅ 데이터 수집/피처 추출/이상 탐지 파이프라인 검증
 - ✅ 가상 O-RU/O-DU/Transport 엔드포인트 시뮬레이션
 - ✅ 지연 스파이크 주입으로 알람 생성 확인
+- 📝 **구조화된 로그 시스템**: debug/summary/alerts 폴더별 분리
+- 📖 **사람 친화적 분석 보고서**: 운영자가 이해하기 쉬운 알람 분석
 
 ### 2. 상세 시나리오 테스트 (10분)
 ```bash
@@ -101,7 +133,17 @@ OCAD 시스템은 실제 ORAN 장비 없이도 완전한 검증이 가능합니�
 - 📉 패킷 손실 (전송 품질 저하)
 - 💥 동시 다발적 문제 (복합 장애)
 
-### 3. 실시간 대시보드 테스트 (지속적)
+### 3. 사람 친화적 보고서 샘플 생성
+```bash
+# 알람 분석 보고서 샘플 생성 및 확인
+python3 scripts/generate_sample_report.py
+```
+- 📖 **WARNING/CRITICAL 레벨 샘플 보고서** 생성
+- 🔍 **문제 요약**: 기술 용어 없이 이해하기 쉬운 설명
+- 💡 **구체적 조치사항**: 실행 가능한 권장사항 제공
+- 👀 **모니터링 포인트**: 지속 관찰이 필요한 지표 안내
+
+### 4. 실시간 대시보드 테스트 (지속적)
 ```bash
 # 웹 대시보드와 실시간 모니터링
 ./scripts/dashboard_test.py
@@ -126,7 +168,10 @@ OCAD 시스템은 실제 ORAN 장비 없이도 완전한 검증이 가능합니�
 **✅ 스마트 알람 시스템**
 - 근거 3개 원칙으로 오탐 감소
 - Hold-down/중복제거로 알람 폭주 방지
-- 심각도별 자동 분류
+- 심각도별 자동 분류 (CRITICAL/WARNING/INFO)
+- 📖 **사람 친화적 분석 보고서**: 운영자가 바로 이해할 수 있는 상세 분석
+- 💡 **구체적 조치사항**: 실행 가능한 권장사항 자동 생성
+- 📁 **구조화된 로그**: debug/summary/alerts 레벨별 분리
 
 **✅ 실시간 성능**
 - 처리 지연 < 30초 (목표)

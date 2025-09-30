@@ -10,13 +10,13 @@ from structlog.types import Processor
 
 
 def configure_logging(log_level: str = "INFO", enable_json: bool = True, 
-                     log_dir: str = None) -> None:
+                     log_dir = None) -> None:
     """Configure structured logging for the application.
     
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         enable_json: Whether to use JSON formatting
-        log_dir: Directory for log files (if None, only console logging)
+        log_dir: Directory for log files (str or Path object, if None, only console logging)
     """
     # Clear existing handlers
     logging.getLogger().handlers.clear()
@@ -31,19 +31,24 @@ def configure_logging(log_level: str = "INFO", enable_json: bool = True,
     
     # File handlers if log_dir is provided
     if log_dir:
-        import os
-        os.makedirs(log_dir, exist_ok=True)
-        os.makedirs(f"{log_dir}/debug", exist_ok=True)
-        os.makedirs(f"{log_dir}/summary", exist_ok=True)
-        os.makedirs(f"{log_dir}/alerts", exist_ok=True)
+        from pathlib import Path
+        
+        # Convert to Path object if it's a string
+        log_path = Path(log_dir)
+        
+        # Create directories
+        log_path.mkdir(parents=True, exist_ok=True)
+        (log_path / "debug").mkdir(exist_ok=True)
+        (log_path / "summary").mkdir(exist_ok=True)
+        (log_path / "alerts").mkdir(exist_ok=True)
         
         # Debug log file (all levels)
-        debug_handler = logging.FileHandler(f"{log_dir}/debug/detailed.log")
+        debug_handler = logging.FileHandler(log_path / "debug" / "detailed.log")
         debug_handler.setLevel(logging.DEBUG)
         handlers.append(debug_handler)
         
         # Summary log file (INFO and above)
-        summary_handler = logging.FileHandler(f"{log_dir}/summary/summary.log")
+        summary_handler = logging.FileHandler(log_path / "summary" / "summary.log")
         summary_handler.setLevel(logging.INFO)
         handlers.append(summary_handler)
     

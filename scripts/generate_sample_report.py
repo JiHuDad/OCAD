@@ -122,11 +122,19 @@ def main():
     console.print("-" * 50)
     print(human_report)
     
-    # 파일로 저장
+    # 파일로 저장 (환경변수 또는 프로젝트 루트 기준)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_file = f"/home/finux/dev/OCAD/logs/sample_human_report_{timestamp}.txt"
     
-    os.makedirs("/home/finux/dev/OCAD/logs", exist_ok=True)
+    # 환경변수 OCAD_LOG_DIR이 있으면 사용, 없으면 프로젝트 루트의 logs 디렉토리
+    if os.getenv('OCAD_LOG_DIR'):
+        log_dir = Path(os.getenv('OCAD_LOG_DIR'))
+    else:
+        project_root = Path(__file__).parent.parent  # scripts의 상위 디렉토리
+        log_dir = project_root / "logs"
+    
+    log_dir.mkdir(exist_ok=True)
+    
+    report_file = log_dir / f"sample_human_report_{timestamp}.txt"
     with open(report_file, 'w', encoding='utf-8') as f:
         f.write(human_report)
     
@@ -209,7 +217,7 @@ def main():
     
     # Critical 보고서 생성 및 저장
     critical_report = alert_manager.generate_human_readable_report(critical_alert, critical_features, critical_capabilities)
-    critical_file = f"/home/finux/dev/OCAD/logs/sample_critical_report_{timestamp}.txt"
+    critical_file = log_dir / f"sample_critical_report_{timestamp}.txt"
     
     with open(critical_file, 'w', encoding='utf-8') as f:
         f.write(critical_report)

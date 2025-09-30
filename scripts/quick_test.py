@@ -258,7 +258,8 @@ async def quick_test():
                     f.write(f"상세 원인:\n")
                     for j, evidence in enumerate(alert.evidence, 1):
                         f.write(f"  {j}. {evidence.description} (신뢰도: {evidence.confidence:.1%})\n")
-                    f.write(f"종합 점수: {alert.composite_score:.3f}\n")
+                    composite_score = alert.score_snapshot.composite_score if alert.score_snapshot else 0.0
+                    f.write(f"종합 점수: {composite_score:.3f}\n")
                     f.write("\n" + "="*60 + "\n\n")
                 
                 # 사람 친화적 상세 보고서 생성
@@ -295,8 +296,15 @@ async def quick_test():
                         )
                         
                         # 사람 친화적 보고서 생성
-                        human_report = alert_manager.generate_human_readable_report(alert, temp_features, capabilities)
-                        f.write(f"{human_report}\n\n")
+                        try:
+                            human_report = alert_manager.generate_human_readable_report(alert, temp_features, capabilities)
+                            f.write(f"{human_report}\n\n")
+                        except Exception as e:
+                            f.write(f"사람 친화적 보고서 생성 실패: {e}\n\n")
+                            # 기본 정보라도 기록
+                            f.write(f"알람 #{i}: {alert.endpoint_id}\n")
+                            f.write(f"심각도: {alert.severity.value.upper()}\n")
+                            f.write(f"설명: {alert.description}\n\n")
                         
                         if i < len(alerts[:3]):
                             f.write("\n" + "🔄 다음 알람" + "\n" + "=" * 80 + "\n\n")

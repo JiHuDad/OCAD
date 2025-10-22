@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Current Status
+
+**프로젝트 현황**: OCAD 시스템은 기본 아키텍처가 완성되어 있으며, 핵심 파이프라인(수집 → 피처 엔지니어링 → 탐지 → 알람)이 정상 동작합니다. 실제 ORAN 장비 없이도 시뮬레이터를 통한 완전한 검증이 가능합니다.
+
+**최근 작업**:
+
+- 구조화된 다층 로깅 시스템 구현 (debug/summary/alerts 분리)
+- 사람 친화적 알람 분석 보고서 자동 생성 기능 추가
+- 플랫폼 호환성 검증 스크립트 추가
+- AI 모델 통합 가이드 문서화
+
+**다음 단계**: 다변량 탐지 알고리즘 고도화, 실시간 대시보드 UI 개선, 성능 최적화
+
 ## Communication Rules
 
 **IMPORTANT**: Always respond in Korean (한글) when communicating with users in this repository. This is a mandatory rule for all interactions.
@@ -312,3 +325,93 @@ The system supports complete validation without actual ORAN equipment through si
 - **Synthetic metric generation**: Realistic time series data with configurable patterns
 - **Anomaly injection**: Inject spikes, drifts, packet loss for validation
 - **Complete pipeline testing**: All stages from collection to alerting work in simulation mode
+
+## Training-Inference Separation (NEW)
+
+**Important Architecture Change**: The system is transitioning from online learning to separated training-inference architecture.
+
+### Current State (Online Learning)
+
+- ResidualDetector (TCN) and MultivariateDetector (Isolation Forest) perform training during inference
+- Models are trained automatically when 50+ samples are collected
+- This causes unpredictable inference latency and makes performance validation impossible
+
+### New Architecture (Separated)
+
+- **Offline Training**: Models are trained separately using dedicated training pipelines
+- **Online Inference**: Detectors load pre-trained models and perform inference only
+- **Benefits**: Consistent latency, reproducible results, model versioning, A/B testing
+
+### Directory Structure for Training
+
+```
+ocad/
+├── training/              # NEW: Training modules
+│   ├── datasets/          # Dataset management
+│   ├── trainers/          # Training logic (TCNTrainer, IsolationForestTrainer)
+│   ├── evaluators/        # Model evaluation
+│   └── utils/             # Model saving/loading, hyperparameter tuning
+├── models/                # NEW: Trained model storage
+│   ├── tcn/               # TCN models (.pth files)
+│   ├── isolation_forest/  # Isolation Forest models (.pkl files)
+│   └── metadata/          # Model metadata and performance reports
+└── data/                  # NEW: Training datasets
+    ├── raw/               # Raw ORAN logs or simulated data
+    ├── processed/         # Preprocessed datasets (Parquet format)
+    └── synthetic/         # Synthetic anomaly data
+```
+
+### Training Commands
+
+```bash
+# Generate training dataset
+python scripts/generate_training_data.py \
+    --endpoints 10 \
+    --duration-hours 24 \
+    --anomaly-rate 0.1
+
+# Train TCN models
+python scripts/train_tcn_model.py \
+    --metric-type udp_echo \
+    --data-path data/processed/timeseries_train.parquet \
+    --epochs 50 \
+    --batch-size 32 \
+    --output models/tcn/udp_echo_v1.0.0.pth
+
+# Train Isolation Forest
+python scripts/train_isolation_forest.py \
+    --data-path data/processed/multivariate_train.parquet \
+    --output models/isolation_forest/multivariate_v1.0.0.pkl
+
+# Evaluate models
+python scripts/evaluate_models.py \
+    --model-path models/tcn/udp_echo_v1.0.0.pth \
+    --test-data data/processed/timeseries_test.parquet
+```
+
+### Using Pre-trained Models
+
+```yaml
+# config/local.yaml
+detection:
+  residual:
+    use_pretrained_models: true  # Enable pre-trained mode
+    model_path: "ocad/models/tcn/"
+  multivariate:
+    use_pretrained_models: true
+    model_path: "ocad/models/isolation_forest/"
+```
+
+### Implementation Plan
+
+See detailed design and implementation plan in [docs/Training-Inference-Separation-Design.md](docs/Training-Inference-Separation-Design.md)
+
+**Phases**:
+
+1. **Phase 1 (Week 1-2)**: Infrastructure setup (directories, BaseTrainer, dataset generation)
+2. **Phase 2 (Week 3-4)**: TCN training-inference separation
+3. **Phase 3 (Week 5)**: Isolation Forest training-inference separation
+4. **Phase 4 (Week 6)**: Integration and validation
+5. **Phase 5 (Week 7-8)**: Automation and MLOps (MLflow, CI/CD)
+
+**Migration Strategy**: Gradual transition with backward compatibility flag to keep existing online learning mode during transition period.

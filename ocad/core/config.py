@@ -92,6 +92,11 @@ class DetectionConfig(BaseModel):
     hold_down_seconds: int = 120      # Hold-down 시간 (초)
     dedup_window_seconds: int = 300   # 중복 제거 윈도우 (초)
 
+    # 사전 훈련 모델 설정 (학습-추론 분리)
+    use_pretrained_models: bool = True              # 사전 훈련 모델 사용 여부
+    pretrained_model_dir: str = "ocad/models/tcn"   # 사전 훈련 모델 디렉토리
+    inference_device: str = "cpu"                   # 추론 디바이스 ("cpu", "cuda", "mps")
+
 
 class AlertConfig(BaseModel):
     """알람 관리 설정.

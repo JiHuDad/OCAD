@@ -19,7 +19,7 @@ from ..core.logging import get_logger
 from ..core.models import Alert, Endpoint, KPIMetrics, Severity
 from ..detectors.base import CompositeDetector
 from ..detectors.changepoint import ChangePointDetector
-from ..detectors.residual import ResidualDetector
+from ..detectors.residual_v2 import ResidualDetectorV2
 from ..detectors.rule_based import RuleBasedDetector
 from ..features.engine import FeatureEngine
 
@@ -66,7 +66,12 @@ class SystemOrchestrator:
         detectors = [
             RuleBasedDetector(config.detection),    # 룰 기반 탐지
             ChangePointDetector(config.detection),  # 변화점 탐지 (CUSUM)
-            ResidualDetector(config.detection),     # 잔차 기반 탐지 (TCN/LSTM)
+            ResidualDetectorV2(
+                config.detection,
+                model_dir=config.detection.pretrained_model_dir,
+                use_pretrained=config.detection.use_pretrained_models,
+                device=config.detection.inference_device,
+            ),  # 잔차 기반 탐지 (사전 훈련 TCN)
         ]
         
         # 다변량 탐지기 추가 (선택사항)

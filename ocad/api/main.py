@@ -11,6 +11,9 @@ from ..core.logging import configure_logging, get_logger
 from ..core.models import Alert, Endpoint, KPIMetrics, Severity
 from ..system.orchestrator import SystemOrchestrator
 
+# Import v1 API routers
+from .v1 import metrics, alerts
+
 
 # Configure logging
 configure_logging(settings.monitoring.log_level)
@@ -20,7 +23,10 @@ logger = get_logger(__name__)
 app = FastAPI(
     title="ORAN CFM-Lite AI Anomaly Detection",
     description="Capability-driven hybrid anomaly detection for ORAN environments",
-    version="0.1.0",
+    version="0.2.0",  # 버전 업데이트
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
 # Add CORS middleware
@@ -31,6 +37,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include v1 API routers
+app.include_router(metrics.router, prefix="/api/v1")
+app.include_router(alerts.router, prefix="/api/v1")
 
 # Global orchestrator instance
 orchestrator: Optional[SystemOrchestrator] = None

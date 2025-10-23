@@ -6,14 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **프로젝트 현황**: OCAD 시스템은 기본 아키텍처가 완성되어 있으며, 핵심 파이프라인(수집 → 피처 엔지니어링 → 탐지 → 알람)이 정상 동작합니다. 실제 ORAN 장비 없이도 시뮬레이터를 통한 완전한 검증이 가능합니다.
 
-**최근 작업**:
+**최근 작업** (2025-10-23):
 
-- 구조화된 다층 로깅 시스템 구현 (debug/summary/alerts 분리)
-- 사람 친화적 알람 분석 보고서 자동 생성 기능 추가
-- 플랫폼 호환성 검증 스크립트 추가
-- AI 모델 통합 가이드 문서화
+- ✅ 학습-추론 분리 완료 (Phases 1-4)
+- ✅ 파일 기반 데이터 입력 시스템 구현 (CSV/Excel/Parquet)
+- ✅ 사람이 읽을 수 있는 샘플 데이터 생성 (6가지 시나리오)
+- ✅ Pydantic v2 스키마 기반 자동 검증
+- ✅ 데이터 디렉토리 구조 정리 (ocad/data → data/)
+- ✅ 리팩토링 문서 업데이트 및 Quick Start Guide 작성
 
-**다음 단계**: 다변량 탐지 알고리즘 고도화, 실시간 대시보드 UI 개선, 성능 최적화
+**다음 단계**: CFM 담당자 협의 → 데이터 수집 가능 여부 확인 → 파일 로더 파이프라인 통합
 
 ## Communication Rules
 
@@ -51,21 +53,42 @@ O-RU/O-DU → Capability Detector → Collectors → Feature Engine → Detector
 
 ### Directory Structure
 
-- `ocad/`: Main Python package
-  - `api/`: FastAPI REST endpoints
-  - `core/`: Configuration, logging, models
-  - `system/`: System orchestration
-  - `capability/`: Equipment capability detection
-  - `collectors/`: Data collection modules
-  - `features/`: Feature engineering
-  - `detectors/`: Anomaly detection algorithms
-  - `alerts/`: Alert management
-  - `utils/`: Utilities and simulators
-- `scripts/`: Utility scripts for testing and setup
-- `config/`: Configuration files
-- `logs/`: Structured logging output
-- `tests/`: Unit and integration tests
-- `docs/`: Documentation
+**명확한 데이터/코드 분리** (2025-10-23 업데이트):
+
+```
+OCAD/
+├── data/                       # 모든 데이터 (프로젝트 루트)
+│   ├── training/               # 학습 데이터 (Parquet)
+│   ├── samples/                # 샘플 데이터 (CSV/Excel/Parquet)
+│   ├── raw/                    # 원본 데이터
+│   ├── processed/              # 처리된 데이터
+│   └── synthetic/              # 합성 데이터
+│
+├── ocad/                       # Python 패키지 (코드만)
+│   ├── loaders/                # 파일 로더 (NEW)
+│   ├── api/                    # FastAPI REST endpoints
+│   ├── core/                   # Configuration, logging, schemas
+│   ├── system/                 # System orchestration
+│   ├── capability/             # Equipment capability detection
+│   ├── collectors/             # Data collection modules
+│   ├── features/               # Feature engineering
+│   ├── detectors/              # Anomaly detection algorithms
+│   ├── alerts/                 # Alert management
+│   ├── training/               # Training logic (코드만)
+│   ├── models/                 # Model architecture definitions
+│   └── utils/                  # Utilities and simulators
+│
+├── scripts/                    # Utility scripts
+├── config/                     # Configuration files
+├── logs/                       # Structured logging output
+├── tests/                      # Unit and integration tests
+└── docs/                       # Documentation
+```
+
+**중요**:
+- ✅ 모든 데이터는 `data/`에 (프로젝트 루트)
+- ✅ `ocad/`는 Python 코드만 포함
+- ❌ `ocad/data/`는 제거됨 (혼란 방지)
 
 ## Common Development Commands
 

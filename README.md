@@ -15,6 +15,95 @@ ORAN 환경에서 축소된 CFM 기능을 활용한 하이브리드 이상탐지
 O-RU/O-DU → Capability Detector → Collectors → Feature Engine → Detectors → Alerts
 ```
 
+## 🆕 파일 기반 데이터 입력 (NEW!)
+
+OCAD는 실시간 수집 외에도 **파일 기반 입력**을 지원합니다. CFM 담당자가 수집한 데이터를 파일로 제공받아 분석할 수 있습니다.
+
+### 지원 형식
+
+- **CSV**: 사람이 읽기 쉬운 형식 (Wide/Long Format 자동 감지)
+- **Excel**: 여러 Sheet 지원 (.xlsx)
+- **Parquet**: 대용량 데이터 고성능 처리
+
+### 빠른 시작
+
+```bash
+# 1. 샘플 데이터 생성
+python scripts/generate_sample_data.py
+
+# 2. 파일 로더 테스트
+python scripts/test_file_loaders.py
+
+# 3. 생성된 샘플 확인
+ls -lh data/samples/
+```
+
+### 샘플 데이터
+
+생성된 샘플 데이터는 사람이 읽을 수 있도록 설계되었습니다:
+
+```csv
+timestamp,endpoint_id,site_name,zone,udp_echo_rtt_ms,ecpri_delay_us,lbm_rtt_ms,notes
+2025-10-22 09:00:00,o-ru-001,Tower-A,Urban,5.2,102.3,7.1,정상 운영
+2025-10-22 09:00:10,o-ru-001,Tower-A,Urban,8.2,158.3,10.5,⚠️ RTT 증가 시작
+2025-10-22 09:00:20,o-ru-001,Tower-A,Urban,25.8,350.1,25.5,🚨 CRITICAL: 높은 지연
+```
+
+**생성 가능한 샘플:**
+1. `01_normal_operation_24h.csv` - 정상 운영 (24시간, 1,440개 레코드)
+2. `02_drift_anomaly.csv/.xlsx` - Drift 이상 패턴 (점진적 증가)
+3. `03_spike_anomaly.csv` - Spike 이상 패턴 (일시적 급증)
+4. `04_multi_endpoint.csv/.parquet` - 여러 엔드포인트 데이터
+5. `05_weekly_data.parquet` - 주간 데이터 (7일, 2,016개 레코드)
+6. `06_comprehensive_example.xlsx` - 종합 예제 (정상+Drift+Spike)
+
+### 파일 로더 사용법
+
+```python
+from pathlib import Path
+from ocad.loaders import CSVLoader, ExcelLoader
+
+# CSV 파일 로드
+loader = CSVLoader(strict_mode=False)
+result = loader.load(Path("data/samples/01_normal_operation_24h.csv"))
+
+if result.success:
+    print(f"✅ {result.valid_records}개 메트릭 로드 완료")
+    for metric in result.metrics:
+        # 탐지 파이프라인으로 전달
+        process_metric(metric)
+
+# Excel 파일 로드
+excel_loader = ExcelLoader(sheet_name="메트릭 데이터")
+result = excel_loader.load(Path("data/samples/sample_oran_metrics.xlsx"))
+```
+
+### 파일 형식 변환
+
+```bash
+# CSV → Parquet (대용량 처리 최적화)
+python -c "
+from ocad.loaders import FormatConverter
+FormatConverter.csv_to_parquet('data/input/metrics.csv', 'data/processed/metrics.parquet')
+"
+
+# Wide Format → Long Format (분석 용이)
+python -c "
+from ocad.loaders import FormatConverter
+FormatConverter.wide_to_long('data/input/metrics_wide.csv', 'data/processed/metrics_long.csv')
+"
+```
+
+### CFM 담당자용 문서
+
+CFM 담당자와 협의 시 사용할 문서:
+- [CFM-Data-Requirements.md](docs/CFM-Data-Requirements.md) - 데이터 수집 요구사항
+- [sample_oran_metrics.xlsx](data/samples/sample_oran_metrics.xlsx) - Excel 샘플 (3 sheets)
+
+**상세 문서**: [File-Based-Input-Implementation-Summary.md](docs/File-Based-Input-Implementation-Summary.md)
+
+---
+
 ## 설치 및 실행
 
 ### 빠른 시작

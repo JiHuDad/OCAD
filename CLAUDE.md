@@ -6,8 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **프로젝트 현황**: OCAD 시스템은 기본 아키텍처가 완성되어 있으며, 핵심 파이프라인(수집 → 피처 엔지니어링 → 탐지 → 알람)이 정상 동작합니다. 실제 ORAN 장비 없이도 시뮬레이터를 통한 완전한 검증이 가능합니다.
 
-**최근 작업** (2025-10-23):
+**최근 작업** (2025-10-27):
 
+- ✅ 문서 재구조화 완료
+  - 21개 문서를 6개 카테고리로 분류 (getting-started, user-guides, data-management, training-inference, architecture, development)
+  - 히스토리 문서는 archive로 이동 (Phase 1-4, Refactoring 문서)
+  - 중복 문서 통합 (데이터 소스 관련 6개 → 1개 통합 가이드)
+- ✅ 긴급 문서 4개 작성
+  - [docs/README.md](docs/README.md) - 문서 인덱스 및 사용자 유형별 가이드
+  - [04-training-inference/Overview.md](docs/04-training-inference/Overview.md) - 학습-추론 개요 (5-10분)
+  - [04-training-inference/Inference-Guide.md](docs/04-training-inference/Inference-Guide.md) - 추론 가이드 (완전한 가이드)
+  - [03-data-management/Data-Source-Guide.md](docs/03-data-management/Data-Source-Guide.md) - 데이터 소스 통합 가이드
+- ✅ README.md 업데이트
+  - 학습-추론 워크플로우 섹션 추가 (핵심 명령어)
+  - 파일 기반 입력 섹션 간소화 (85줄 → 20줄)
+  - 주요 컴포넌트에 데이터 소스 추상화 추가
+  - 문서 섹션 추가 (카테고리별 링크)
+- ✅ 데이터 소스 추상화 설계 및 구현 (Phase 1 완료)
+  - `DataSource` 추상 인터페이스 정의
+  - `FileDataSource` 구현 (CSV/Excel/Parquet 지원)
+  - `DataSourceFactory` 팩토리 패턴 구현
+  - 향후 `StreamingDataSource` (Kafka/WebSocket) 지원 준비
+- ✅ 학습/추론 스크립트 통합
+  - `scripts/train_model.py` - 데이터 소스 선택 가능
+  - `scripts/run_inference.py` - 추론 실행 (정확도 88.85%)
+  - `scripts/generate_training_inference_data.py` - 학습/추론 데이터 생성
+
+**이전 작업** (2025-10-23):
 - ✅ 학습-추론 분리 완료 (Phases 1-4)
 - ✅ 파일 기반 데이터 입력 시스템 구현 (CSV/Excel/Parquet)
 - ✅ 사람이 읽을 수 있는 샘플 데이터 생성 (6가지 시나리오)
@@ -15,7 +40,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ 데이터 디렉토리 구조 정리 (ocad/data → data/)
 - ✅ 리팩토링 문서 업데이트 및 Quick Start Guide 작성
 
-**다음 단계**: CFM 담당자 협의 → 데이터 수집 가능 여부 확인 → 파일 로더 파이프라인 통합
+**다음 단계**:
+1. CFM 담당자 협의 → 실제 데이터 수집 가능 여부 확인
+2. 학습된 모델 통합 (현재는 룰 기반 탐지만 사용)
+3. 실시간 스트리밍 데이터 소스 구현 (StreamingDataSource - Kafka/WebSocket)
 
 ## Communication Rules
 

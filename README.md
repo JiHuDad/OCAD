@@ -15,92 +15,64 @@ ORAN 환경에서 축소된 CFM 기능을 활용한 하이브리드 이상탐지
 O-RU/O-DU → Capability Detector → Collectors → Feature Engine → Detectors → Alerts
 ```
 
-## 🆕 파일 기반 데이터 입력 (NEW!)
+## 🤖 학습 및 추론 워크플로우
 
-OCAD는 실시간 수집 외에도 **파일 기반 입력**을 지원합니다. CFM 담당자가 수집한 데이터를 파일로 제공받아 분석할 수 있습니다.
+OCAD는 **학습-추론 분리 아키텍처**를 사용합니다:
 
-### 지원 형식
-
-- **CSV**: 사람이 읽기 쉬운 형식 (Wide/Long Format 자동 감지)
-- **Excel**: 여러 Sheet 지원 (.xlsx)
-- **Parquet**: 대용량 데이터 고성능 처리
-
-### 빠른 시작
+### 학습 (Training)
+정상 데이터만 사용하여 모델 학습:
 
 ```bash
-# 1. 샘플 데이터 생성
+# 1. 학습 데이터 생성 (정상 데이터 28,800개)
+python scripts/generate_training_inference_data.py --mode training
+
+# 2. 모델 학습
+python scripts/train_model.py \
+    --data-source data/training_normal_only.csv \
+    --epochs 50
+```
+
+### 추론 (Inference)
+학습된 모델로 이상 탐지:
+
+```bash
+# 1. 추론 테스트 데이터 생성 (정상 + 6가지 이상 시나리오)
+python scripts/generate_training_inference_data.py --mode inference
+
+# 2. 추론 실행
+python scripts/run_inference.py \
+    --data-source data/inference_test_scenarios.csv \
+    --output data/inference_results.csv
+
+# 3. 결과 확인
+head -20 data/inference_results.csv
+```
+
+**상세 가이드**: [학습-추론 워크플로우](docs/02-user-guides/Training-Inference-Workflow.md)
+
+## 💾 데이터 입력 방식
+
+OCAD는 두 가지 데이터 입력 방식을 지원합니다:
+
+### 1. 파일 기반 (현재 지원)
+- **CSV, Excel, Parquet** 형식
+- 사람이 읽기 쉬운 형식
+- 학습/추론 데이터 분리
+
+```bash
+# 데모용 샘플 생성 (다양한 시나리오)
 python scripts/generate_sample_data.py
 
-# 2. 파일 로더 테스트
-python scripts/test_file_loaders.py
-
-# 3. 생성된 샘플 확인
-ls -lh data/samples/
+# 학습/추론 데이터 생성
+python scripts/generate_training_inference_data.py
 ```
 
-### 샘플 데이터
+### 2. 실시간 수집 (기본)
+- **NETCONF/YANG**을 통한 실시간 수집
+- UDP Echo, eCPRI, LBM 메트릭
+- Capability 자동 감지
 
-생성된 샘플 데이터는 사람이 읽을 수 있도록 설계되었습니다:
-
-```csv
-timestamp,endpoint_id,site_name,zone,udp_echo_rtt_ms,ecpri_delay_us,lbm_rtt_ms,notes
-2025-10-22 09:00:00,o-ru-001,Tower-A,Urban,5.2,102.3,7.1,정상 운영
-2025-10-22 09:00:10,o-ru-001,Tower-A,Urban,8.2,158.3,10.5,⚠️ RTT 증가 시작
-2025-10-22 09:00:20,o-ru-001,Tower-A,Urban,25.8,350.1,25.5,🚨 CRITICAL: 높은 지연
-```
-
-**생성 가능한 샘플:**
-1. `01_normal_operation_24h.csv` - 정상 운영 (24시간, 1,440개 레코드)
-2. `02_drift_anomaly.csv/.xlsx` - Drift 이상 패턴 (점진적 증가)
-3. `03_spike_anomaly.csv` - Spike 이상 패턴 (일시적 급증)
-4. `04_multi_endpoint.csv/.parquet` - 여러 엔드포인트 데이터
-5. `05_weekly_data.parquet` - 주간 데이터 (7일, 2,016개 레코드)
-6. `06_comprehensive_example.xlsx` - 종합 예제 (정상+Drift+Spike)
-
-### 파일 로더 사용법
-
-```python
-from pathlib import Path
-from ocad.loaders import CSVLoader, ExcelLoader
-
-# CSV 파일 로드
-loader = CSVLoader(strict_mode=False)
-result = loader.load(Path("data/samples/01_normal_operation_24h.csv"))
-
-if result.success:
-    print(f"✅ {result.valid_records}개 메트릭 로드 완료")
-    for metric in result.metrics:
-        # 탐지 파이프라인으로 전달
-        process_metric(metric)
-
-# Excel 파일 로드
-excel_loader = ExcelLoader(sheet_name="메트릭 데이터")
-result = excel_loader.load(Path("data/samples/sample_oran_metrics.xlsx"))
-```
-
-### 파일 형식 변환
-
-```bash
-# CSV → Parquet (대용량 처리 최적화)
-python -c "
-from ocad.loaders import FormatConverter
-FormatConverter.csv_to_parquet('data/input/metrics.csv', 'data/processed/metrics.parquet')
-"
-
-# Wide Format → Long Format (분석 용이)
-python -c "
-from ocad.loaders import FormatConverter
-FormatConverter.wide_to_long('data/input/metrics_wide.csv', 'data/processed/metrics_long.csv')
-"
-```
-
-### CFM 담당자용 문서
-
-CFM 담당자와 협의 시 사용할 문서:
-- [CFM-Data-Requirements.md](docs/CFM-Data-Requirements.md) - 데이터 수집 요구사항
-- [sample_oran_metrics.xlsx](data/samples/sample_oran_metrics.xlsx) - Excel 샘플 (3 sheets)
-
-**상세 문서**: [File-Based-Input-Implementation-Summary.md](docs/File-Based-Input-Implementation-Summary.md)
+**상세 가이드**: [Data-Source-Guide.md](docs/03-data-management/Data-Source-Guide.md)
 
 ---
 
@@ -305,6 +277,38 @@ python3 scripts/generate_sample_report.py
 - 근거 3개 원칙 (드리프트/급등/동시성 중 2-3개)
 - Hold-down, 중복 제거, 억제
 - 스파크라인 및 capability 스냅샷
+
+### 6. Data Source Abstraction
+- 파일 기반 입력 (CSV/Excel/Parquet)
+- 스트리밍 입력 (Kafka/WebSocket - 향후)
+- 통일된 DataSource 인터페이스
+- 학습/추론 모두 동일한 방식으로 처리
+
+## 📚 문서
+
+### 시작하기
+- [빠른 시작 가이드](docs/01-getting-started/Quick-Start-Guide.md) - 5분 내 시작
+- [학습-추론 워크플로우](docs/02-user-guides/Training-Inference-Workflow.md) - 전체 흐름 이해
+
+### 학습 및 추론
+- [학습-추론 개요](docs/04-training-inference/Overview.md) - 핵심 개념 (5-10분)
+- [학습 가이드](docs/04-training-inference/Training-Guide.md) - 모델 학습 방법
+- [추론 가이드](docs/04-training-inference/Inference-Guide.md) - 이상 탐지 실행
+
+### 데이터 관리
+- [데이터 소스 가이드](docs/03-data-management/Data-Source-Guide.md) - 파일/스트리밍 입력
+- [CFM 데이터 요구사항](docs/03-data-management/CFM-Data-Requirements.md) - CFM 담당자용
+
+### 운영 및 개발
+- [운영 가이드](docs/02-user-guides/Operations-Guide.md) - 시스템 운영
+- [로깅 가이드](docs/02-user-guides/Logging-Guide.md) - 로그 분석
+- [API 참조](docs/02-user-guides/API.md) - REST API
+
+### 아키텍처
+- [학습-추론 분리 설계](docs/05-architecture/Training-Inference-Separation-Design.md) - 온라인/오프라인 분리
+- [데이터 소스 추상화](docs/05-architecture/Data-Source-Abstraction-Design.md) - 파일/스트리밍 지원
+
+**전체 문서 인덱스**: [docs/README.md](docs/README.md)
 
 ## 성능 목표
 

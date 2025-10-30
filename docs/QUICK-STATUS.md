@@ -69,15 +69,24 @@ data/processed/
 ### 스크립트 파일
 ```
 scripts/
-├── prepare_timeseries_data.py       # Phase 1
-├── prepare_timeseries_data_v2.py    # Phase 2 (범용)
-├── prepare_multivariate_data.py     # Phase 3 (다변량)
-├── train_isolation_forest.py        # Phase 3 (IF 학습)
-├── test_udp_echo_model.py           # 단일 모델 검증
-├── test_all_tcn_models.py           # 전체 TCN 검증
-├── test_isolation_forest.py         # IF 검증
+# 데이터 준비
+├── prepare_timeseries_data.py       # Phase 1 (UDP Echo 전용)
+├── prepare_timeseries_data_v2.py    # Phase 2 (UDP/eCPRI/LBM 범용)
+├── prepare_multivariate_data.py     # Phase 3 (다변량 피처 생성)
+
+# 모델 학습
+├── train_tcn_model.py               # TCN 학습 (데이터 경로 선택)
+├── train_isolation_forest.py        # IF 학습 (데이터 경로 선택)
+
+# 추론 실행
+├── inference_simple.py              # 간단한 추론 (데이터 파일 선택) ⭐ 추천
+├── run_inference.py                 # 기존 추론 스크립트
+
+# 모델 검증
+├── test_all_tcn_models.py           # 전체 TCN 모델 검증
+├── test_isolation_forest.py         # Isolation Forest 검증
 ├── validate_all_models.py           # 전체 모델 검증 (4개 데이터셋)
-└── test_integrated_detectors.py     # Phase 4 (통합 테스트)
+└── test_integrated_detectors.py     # Phase 4 통합 테스트
 ```
 
 ---
@@ -116,21 +125,20 @@ scripts/
 # 가상환경 활성화
 source .venv/bin/activate
 
-# 모든 모델 확인
-ls -lh ocad/models/tcn/*vv2.0.0.*
-ls -lh ocad/models/isolation_forest/*.pkl
+# ⭐ 추론 실행 (자신의 데이터로!) - 가장 많이 사용
+python scripts/inference_simple.py \
+    --input data/samples/01_normal_operation_24h.csv \
+    --output data/results/my_inference.csv
 
-# 통합 테스트 (Phase 4) - 추천!
+# 통합 테스트 (모든 모델 로드 확인)
 python scripts/test_integrated_detectors.py
 
 # 전체 모델 검증 (4개 데이터셋)
 python scripts/validate_all_models.py
 
-# TCN 모델 검증
-PYTHONPATH=/home/finux/dev/OCAD:$PYTHONPATH python scripts/test_all_tcn_models.py
-
-# Isolation Forest 검증
-python scripts/test_isolation_forest.py
+# 모든 모델 파일 확인
+ls -lh ocad/models/tcn/*vv2.0.0.*
+ls -lh ocad/models/isolation_forest/*.pkl
 
 # Phase 4 완료 리포트
 cat docs/PHASE4-COMPLETION-REPORT.md

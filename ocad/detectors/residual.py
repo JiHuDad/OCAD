@@ -1,6 +1,8 @@
 """Residual-based anomaly detector using predictive models."""
 
 import time
+import json
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -54,35 +56,43 @@ class ResidualDetector(BaseDetector):
     
     def __init__(self, config):
         """Initialize residual detector.
-        
+
         Args:
             config: Detection configuration
         """
         super().__init__(config)
-        
+
+        # Check if pre-trained models should be used
+        self.use_pretrained = getattr(config, 'use_pretrained_models', False)
+        self.model_dir = Path(getattr(config, 'model_path', 'ocad/models/tcn'))
+
         # Models for different metrics
         self.models = {
             "udp_echo": None,
             "ecpri": None,
             "lbm": None,
         }
-        
+
         # Data scalers
         self.scalers = {
             "udp_echo": StandardScaler(),
             "ecpri": StandardScaler(),
             "lbm": StandardScaler(),
         }
-        
+
         # Historical data for training
         self.history = {
             "udp_echo": [],
             "ecpri": [],
             "lbm": [],
         }
-        
+
         self.sequence_length = 10  # Use last 10 points for prediction
         self.min_training_samples = 50
+
+        # Load pre-trained models if enabled
+        if self.use_pretrained:
+            self._load_pretrained_models()
         
     def can_detect(self, capabilities: Capabilities) -> bool:
         """Check if residual detection is possible.
@@ -310,25 +320,77 @@ class ResidualDetector(BaseDetector):
             )
             return None
     
+    def _load_pretrained_models(self) -> None:
+        """Load pre-trained TCN models from disk."""
+        model_files = {
+            "udp_echo": "udp_echo_vv2.0.0",
+            "ecpri": "ecpri_vv2.0.0",
+            "lbm": "lbm_vv2.0.0",
+        }
+
+        for metric_type, model_name in model_files.items():
+            try:
+                model_path = self.model_dir / f"{model_name}.pth"
+                metadata_path = self.model_dir / f"{model_name}.json"
+
+                if not model_path.exists() or not metadata_path.exists():
+                    self.logger.warning(
+                        f"Pre-trained model not found for {metric_type}",
+                        model_path=str(model_path)
+                    )
+                    continue
+
+                # Load metadata
+                with open(metadata_path) as f:
+                    metadata = json.load(f)
+
+                # Create model architecture
+                model_config = metadata['model_config']
+                model = SimpleTCN(
+                    input_size=model_config['input_size'],
+                    hidden_size=model_config['hidden_size'],
+                    output_size=model_config['output_size']
+                )
+
+                # Load weights
+                checkpoint = torch.load(model_path, map_location='cpu')
+                state_dict = checkpoint.get('model_state_dict', checkpoint)
+                model.load_state_dict(state_dict)
+                model.eval()
+
+                self.models[metric_type] = model
+
+                self.logger.info(
+                    f"Loaded pre-trained TCN model for {metric_type}",
+                    version=metadata['metadata']['version'],
+                    epochs=metadata['performance']['total_epochs']
+                )
+
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to load pre-trained model for {metric_type}",
+                    error=str(e)
+                )
+
     def get_evidence(self, features: FeatureVector) -> Dict[str, float]:
         """Get evidence details for residual detection.
-        
+
         Args:
             features: Feature vector
-            
+
         Returns:
             Dictionary of evidence details
         """
         evidence = {}
-        
+
         # Add predicted vs actual values if available
         if features.udp_echo_residual is not None:
             evidence["udp_echo_residual"] = features.udp_echo_residual
-        
+
         if features.ecpri_residual is not None:
             evidence["ecpri_residual"] = features.ecpri_residual
-        
+
         if features.lbm_residual is not None:
             evidence["lbm_residual"] = features.lbm_residual
-        
+
         return evidence

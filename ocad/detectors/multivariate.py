@@ -1,5 +1,8 @@
 """Multivariate anomaly detector using Isolation Forest."""
 
+import pickle
+import json
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -15,21 +18,29 @@ class MultivariateDetector(BaseDetector):
     
     def __init__(self, config):
         """Initialize multivariate detector.
-        
+
         Args:
             config: Detection configuration
         """
         super().__init__(config)
-        
+
+        # Check if pre-trained models should be used
+        self.use_pretrained = getattr(config, 'use_pretrained_models', False)
+        self.model_dir = Path(getattr(config, 'multivariate_model_path', 'ocad/models/isolation_forest'))
+
         # Models for different endpoint groups
         self.models: Dict[str, IsolationForest] = {}
         self.scalers: Dict[str, StandardScaler] = {}
-        
+
         # Historical feature vectors for training
         self.feature_history: Dict[str, List[FeatureVector]] = {}
-        
+
         self.min_training_samples = 50
         self.contamination = 0.1  # Expected anomaly rate
+
+        # Load pre-trained model if enabled
+        if self.use_pretrained:
+            self._load_pretrained_model()
         
     def can_detect(self, capabilities: Capabilities) -> bool:
         """Check if multivariate detection is possible.
@@ -311,5 +322,48 @@ class MultivariateDetector(BaseDetector):
         if metric_count > 0:
             evidence["multivariate_deviation"] = total_deviation / metric_count
             evidence["correlated_metrics"] = metric_count
-        
+
         return evidence
+
+    def _load_pretrained_model(self) -> None:
+        """Load pre-trained Isolation Forest model from disk."""
+        try:
+            model_path = self.model_dir / "isolation_forest_v1.0.0.pkl"
+            scaler_path = self.model_dir / "isolation_forest_v1.0.0_scaler.pkl"
+            metadata_path = self.model_dir / "isolation_forest_v1.0.0.json"
+
+            if not model_path.exists() or not scaler_path.exists():
+                self.logger.warning(
+                    "Pre-trained Isolation Forest model not found",
+                    model_path=str(model_path)
+                )
+                return
+
+            # Load model and scaler
+            with open(model_path, 'rb') as f:
+                model = pickle.load(f)
+
+            with open(scaler_path, 'rb') as f:
+                scaler = pickle.load(f)
+
+            # Load metadata
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+
+            # Store as default model
+            self.models['default'] = model
+            self.scalers['default'] = scaler
+            self.feature_names = metadata['metadata']['feature_names']
+
+            self.logger.info(
+                "Loaded pre-trained Isolation Forest model",
+                version=metadata['metadata']['version'],
+                n_features=metadata['metadata']['n_features'],
+                contamination=metadata['hyperparameters']['contamination']
+            )
+
+        except Exception as e:
+            self.logger.error(
+                "Failed to load pre-trained Isolation Forest model",
+                error=str(e)
+            )

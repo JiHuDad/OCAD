@@ -42,14 +42,19 @@ detection:
   changepoint_weight: 0.25
   residual_weight: 0.30
   multivariate_weight: 0.10
-  
+
   rule_timeout_ms: 5000.0
   rule_p99_threshold_ms: 100.0
   cusum_threshold: 5.0
   residual_threshold: 3.0
-  
+
   hold_down_seconds: 120
   dedup_window_seconds: 300
+
+  # Pre-trained models configuration
+  use_pretrained_models: true
+  model_path: "ocad/models/tcn"
+  multivariate_model_path: "ocad/models/isolation_forest"
 
 alert:
   evidence_count: 3

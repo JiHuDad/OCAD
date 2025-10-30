@@ -17,45 +17,159 @@ O-RU/O-DU → Capability Detector → Collectors → Feature Engine → Detector
 
 ## 🤖 학습 및 추론 워크플로우
 
-OCAD는 **학습-추론 분리 아키텍처**를 사용합니다:
+OCAD는 **학습-추론 분리 아키텍처**를 사용하며, **Phase 1-4 완료**로 즉시 사용 가능합니다.
 
-### 학습 (Training)
-정상 데이터만 사용하여 모델 학습:
+### ✅ 현재 상태 (Phase 1-4 완료)
 
-```bash
-# 1. 학습 데이터 생성 (정상 데이터 28,800개)
-python scripts/generate_training_inference_data.py --mode training
+학습된 4개 모델이 준비되어 있어 **즉시 추론 가능**합니다:
 
-# 2. 모델 학습
-python scripts/train_model.py \
-    --data-source data/training_normal_only.csv \
-    --epochs 50
-```
+- **TCN 모델 3개**: UDP Echo, eCPRI, LBM (예측-잔차 기반 탐지)
+- **Isolation Forest 1개**: 다변량 이상 탐지
 
-### 추론 (Inference)
-학습된 모델로 이상 탐지 + 보고서 생성 (통합 스크립트):
+### 🚀 빠른 시작: 추론 실행
+
+#### 1️⃣ 자신의 데이터로 추론 (권장!)
 
 ```bash
-# 1. 추론 테스트 데이터 생성 (정상 + 6가지 이상 시나리오)
-python scripts/generate_training_inference_data.py --mode inference
+# 가상환경 활성화
+source .venv/bin/activate
 
-# 2. 추론 실행 + 보고서 생성 (한번에!)
-python scripts/inference_with_report.py \
-    --data-source data/inference_test_scenarios.csv
+# 데이터 파일을 선택하여 추론 실행
+python scripts/inference_simple.py \
+    --input data/samples/01_normal_operation_24h.csv \
+    --output data/results/my_inference.csv
 
-# 자동 생성되는 파일:
-# - data/inference_results_YYYYMMDD_HHMMSS.csv (추론 결과)
-# - reports/inference_report_YYYYMMDD_HHMMSS.md (상세 보고서)
+# 지원 형식: CSV, Excel (.xlsx, .xls), Parquet
+# 필수 컬럼: timestamp, endpoint_id, udp_echo_rtt_ms, ecpri_delay_us, lbm_rtt_ms, ccm_miss_count
+# 출력: residual_score, multivariate_score, is_anomaly 컬럼 포함 CSV
 
-# 3. 보고서 확인
-cat reports/inference_report_*.md
+# 출력 예시:
+# 📂 입력 데이터: data/samples/01_normal_operation_24h.csv
+# ✅ 1440개 레코드 로드 완료
+# 🔧 ResidualDetector 초기화 중...
+# 🔧 MultivariateDetector 초기화 중...
+# 🚀 1440개 샘플에 대한 추론 실행 중...
+# 📊 추론 결과 요약
+# 총 샘플 수: 1440
+# 이상 탐지 수: 0
+# 이상 탐지율: 0.00%
+# 💾 결과 저장 완료: data/results/my_inference.csv
 ```
 
-**최근 추론 결과** (2025-10-28):
-- 정상 데이터: 100% 정확도 (False Positive 0개)
-- 비정상 데이터: 82.45% 정확도 (Recall 82.45%)
+#### 2️⃣ 모델 검증 (시스템 확인용)
 
-**상세 가이드**: [학습-추론 워크플로우](docs/02-user-guides/Training-Inference-Workflow.md)
+```bash
+# 통합 테스트 (모든 모델 로드 확인)
+python scripts/test_integrated_detectors.py
+
+# 검증 데이터셋으로 모델 성능 확인
+python scripts/validate_all_models.py
+# 출력: 정상 10.0% / 드리프트 81.0% / 스파이크 26.2%
+```
+
+### 📊 결과 확인 방법
+
+추론 결과는 3가지 방법으로 확인할 수 있습니다:
+
+#### 1. CSV 파일 (추천!)
+
+```bash
+# 추론 결과 CSV 파일 확인
+cat data/results/my_inference.csv
+
+# 출력 예시:
+# timestamp,endpoint_id,residual_score,residual_anomaly,multivariate_score,multivariate_anomaly,final_score,is_anomaly
+# 2025-10-30 00:00:00,endpoint-1,0.0,0,0.0017,0,0.0017,0
+# 2025-10-30 00:01:00,endpoint-1,0.0,0,0.0023,0,0.0023,0
+# ...
+
+# Excel로 열거나 pandas로 분석 가능
+```
+
+#### 2. 콘솔 출력
+
+```bash
+python scripts/inference_simple.py --input YOUR_DATA.csv
+
+# 터미널에 실시간으로 출력됩니다:
+# - 로드된 레코드 수
+# - 탐지기 초기화 상태
+# - 진행률 (100개 단위)
+# - 최종 요약 (이상 탐지율, 평균 점수)
+```
+
+#### 3. 개별 모델 테스트
+
+```bash
+# TCN 모델만 테스트
+python scripts/test_all_tcn_models.py
+
+# Isolation Forest만 테스트
+python scripts/test_isolation_forest.py
+```
+
+### 🔧 추가 학습 (새 데이터로 모델 재학습)
+
+자신의 데이터로 모델을 재학습할 수 있습니다:
+
+#### 1️⃣ TCN 모델 학습 (시계열 예측-잔차 탐지)
+
+```bash
+# Step 1: 학습 데이터 준비 (Parquet 포맷으로 변환)
+python scripts/prepare_timeseries_data_v2.py \
+    --input-csv MY_TRAINING_DATA.csv \
+    --output-dir data/processed \
+    --metric-type udp_echo
+
+# Step 2: TCN 모델 학습 (데이터 경로 선택 가능)
+python scripts/train_tcn_model.py \
+    --train-data data/processed/timeseries_train.parquet \
+    --val-data data/processed/timeseries_val.parquet \
+    --test-data data/processed/timeseries_test.parquet \
+    --metric-type udp_echo \
+    --epochs 50 \
+    --batch-size 32
+
+# 다른 메트릭 학습: --metric-type ecpri 또는 lbm
+```
+
+#### 2️⃣ Isolation Forest 학습 (다변량 이상 탐지)
+
+```bash
+# Step 1: 다변량 피처 데이터 준비
+python scripts/prepare_multivariate_data.py \
+    --input MY_TRAINING_DATA.csv \
+    --output-dir data/processed
+
+# Step 2: Isolation Forest 학습 (데이터 경로 선택 가능)
+python scripts/train_isolation_forest.py \
+    --train-data data/processed/multivariate_train.parquet \
+    --val-data data/processed/multivariate_val.parquet \
+    --test-data data/processed/multivariate_test.parquet \
+    --output ocad/models/isolation_forest/my_model_v1.0.0.pkl
+```
+
+**입력 데이터 형식**:
+- **파일 형식**: CSV, Excel (.xlsx, .xls), Parquet
+- **필수 컬럼**: `timestamp, endpoint_id, udp_echo_rtt_ms, ecpri_delay_us, lbm_rtt_ms, ccm_miss_count`
+- **데이터 요구사항**: 정상 데이터만 사용 (이상 데이터 제외)
+
+### 📈 학습 결과
+
+**Phase 1-4 완료 상태** (2025-10-30):
+
+| 모델 | 데이터 | 성능 | 크기 |
+|------|--------|------|------|
+| UDP Echo TCN v2.0.0 | 28,750 시퀀스 (17 epochs) | R² = 0.19 | 17KB |
+| eCPRI TCN v2.0.0 | 1,430 시퀀스 (7 epochs) | R² = -0.003 | 17KB |
+| LBM TCN v2.0.0 | 1,430 시퀀스 (6 epochs) | R² = -0.008 | 17KB |
+| Isolation Forest v1.0.0 | 1,431 샘플 (20 피처) | Drift 81% / Spike 26% | 1.14MB |
+
+**상세 리포트**:
+
+- [Phase 4 완료 리포트](docs/PHASE4-COMPLETION-REPORT.md) - 모델 통합
+- [Phase 3 완료 리포트](docs/PHASE3-COMPLETION-REPORT.md) - Isolation Forest
+- [Quick Status](docs/QUICK-STATUS.md) - 전체 진행 상황
 
 ## 💾 데이터 입력 방식
 

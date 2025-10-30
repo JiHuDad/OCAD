@@ -33,20 +33,27 @@ python scripts/train_model.py \
 ```
 
 ### 추론 (Inference)
-학습된 모델로 이상 탐지:
+학습된 모델로 이상 탐지 + 보고서 생성 (통합 스크립트):
 
 ```bash
 # 1. 추론 테스트 데이터 생성 (정상 + 6가지 이상 시나리오)
 python scripts/generate_training_inference_data.py --mode inference
 
-# 2. 추론 실행
-python scripts/run_inference.py \
-    --data-source data/inference_test_scenarios.csv \
-    --output data/inference_results.csv
+# 2. 추론 실행 + 보고서 생성 (한번에!)
+python scripts/inference_with_report.py \
+    --data-source data/inference_test_scenarios.csv
 
-# 3. 결과 확인
-head -20 data/inference_results.csv
+# 자동 생성되는 파일:
+# - data/inference_results_YYYYMMDD_HHMMSS.csv (추론 결과)
+# - reports/inference_report_YYYYMMDD_HHMMSS.md (상세 보고서)
+
+# 3. 보고서 확인
+cat reports/inference_report_*.md
 ```
+
+**최근 추론 결과** (2025-10-28):
+- 정상 데이터: 100% 정확도 (False Positive 0개)
+- 비정상 데이터: 82.45% 정확도 (Recall 82.45%)
 
 **상세 가이드**: [학습-추론 워크플로우](docs/02-user-guides/Training-Inference-Workflow.md)
 

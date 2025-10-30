@@ -150,3 +150,21 @@ OCAD 아키텍처와 설계를 이해하시려면:
 
 **최종 업데이트**: 2025-10-27
 **문서 버전**: 2.0.0 (재구조화 완료)
+
+---
+
+## 🎯 프로젝트 진행 상황 (NEW)
+
+### Phase 1-2 완료 (2025-10-30)
+- [빠른 현황](QUICK-STATUS.md) - 현재 진행 상황 요약
+- [상세 진행 리포트](PROGRESS-REPORT-20251030.md) - Phase 1-2 완료 내역
+- [Phase 3 작업 가이드](TOMORROW-PHASE3-GUIDE.md) - 다음 단계 (Isolation Forest)
+- [전체 로드맵](PHASES-OVERVIEW.md) - Phase 1-5 개요
+- [작업 목록](TODO.md) - 전체 작업 체크리스트
+
+### 학습된 모델
+- ✅ UDP Echo TCN v2.0.0 (R² = 0.19)
+- ✅ eCPRI TCN v2.0.0
+- ✅ LBM TCN v2.0.0
+- ⏳ Isolation Forest (Phase 3 예정)
+

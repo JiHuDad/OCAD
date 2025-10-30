@@ -45,6 +45,13 @@ OCAD 아키텍처와 설계를 이해하시려면:
 
 ## 📂 문서 구조
 
+### 00-project-design/ (프로젝트 설계) ⭐
+원본 설계 문서 (ORAN CFM-Lite 기반):
+- [Design-4.md](00-project-design/Design-4.md) - 시스템 아키텍처 설계
+- [PRD-4.md](00-project-design/PRD-4.md) - 제품 요구사항 정의서
+- [explain-4.md](00-project-design/explain-4.md) - 설계 설명 및 근거
+- [Tasklist-4.md](00-project-design/Tasklist-4.md) - 구현 작업 목록
+
 ### 01-getting-started/ (시작하기)
 - [Quick-Start-Guide.md](01-getting-started/Quick-Start-Guide.md) - 빠른 시작 가이드
 

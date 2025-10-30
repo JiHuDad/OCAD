@@ -292,6 +292,14 @@ collected_samples/
 alert_history/
 notifications/
 
+# Generated reports (auto-generated inference reports)
+reports/
+*.report.md
+
+# Temporary test scripts (ad-hoc testing)
+test_*.py
+!tests/test_*.py  # Keep actual test files
+
 # Capability discovery cache
 capability_cache/
 

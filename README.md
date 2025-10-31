@@ -108,20 +108,47 @@ python scripts/test_all_tcn_models.py
 python scripts/test_isolation_forest.py
 ```
 
-### 🔧 추가 학습 (새 데이터로 모델 재학습)
+### 🔧 모델 학습 (처음부터 학습하기)
 
-자신의 데이터로 모델을 재학습할 수 있습니다:
+자신의 데이터가 없다면 먼저 데이터셋을 생성하고, 모델을 학습할 수 있습니다:
+
+#### 0️⃣ 데이터셋 생성 (자신의 데이터가 없는 경우)
+
+```bash
+# 학습용 정상 데이터 + 검증용 정상/비정상 데이터 자동 생성
+python scripts/generate_datasets.py \
+    --training-hours 24 \
+    --validation-hours 12 \
+    --anomaly-hours 6 \
+    --formats csv parquet
+
+# 생성되는 파일:
+# 1. data/datasets/01_training_normal.csv (학습용 정상 데이터, 24시간)
+# 2. data/datasets/02_validation_normal.csv (검증용 정상 데이터, 12시간)
+# 3. data/datasets/03_validation_drift_anomaly.csv (점진적 증가 이상)
+# 4. data/datasets/04_validation_spike_anomaly.csv (급격한 증가 이상)
+# 5. data/datasets/05_validation_packet_loss_anomaly.csv (패킷 손실 이상)
+```
+
+**데이터셋 구성**:
+
+- **학습 데이터**: 정상 운영 데이터만 포함 (24시간, 1440개 샘플)
+- **검증 정상 데이터**: 모델 성능 확인용 정상 데이터 (12시간, 720개 샘플)
+- **검증 비정상 데이터**: 3가지 이상 패턴 (각 6시간, 360개 샘플)
+  - Drift: 점진적 성능 저하
+  - Spike: 급격한 지연 증가
+  - Packet Loss: 패킷 손실 발생
 
 #### 1️⃣ TCN 모델 학습 (시계열 예측-잔차 탐지)
 
 ```bash
 # Step 1: 학습 데이터 준비 (Parquet 포맷으로 변환)
 python scripts/prepare_timeseries_data_v2.py \
-    --input-csv MY_TRAINING_DATA.csv \
+    --input-csv data/datasets/01_training_normal.csv \
     --output-dir data/processed \
     --metric-type udp_echo
 
-# Step 2: TCN 모델 학습 (데이터 경로 선택 가능)
+# Step 2: TCN 모델 학습
 python scripts/train_tcn_model.py \
     --train-data data/processed/timeseries_train.parquet \
     --val-data data/processed/timeseries_val.parquet \
@@ -138,10 +165,10 @@ python scripts/train_tcn_model.py \
 ```bash
 # Step 1: 다변량 피처 데이터 준비
 python scripts/prepare_multivariate_data.py \
-    --input MY_TRAINING_DATA.csv \
+    --input data/datasets/01_training_normal.csv \
     --output-dir data/processed
 
-# Step 2: Isolation Forest 학습 (데이터 경로 선택 가능)
+# Step 2: Isolation Forest 학습
 python scripts/train_isolation_forest.py \
     --train-data data/processed/multivariate_train.parquet \
     --val-data data/processed/multivariate_val.parquet \
@@ -149,10 +176,32 @@ python scripts/train_isolation_forest.py \
     --output ocad/models/isolation_forest/my_model_v1.0.0.pkl
 ```
 
+#### 3️⃣ 학습된 모델 검증
+
+```bash
+# 정상 데이터로 검증 (낮은 이상 탐지율 기대)
+python scripts/inference_simple.py \
+    --input data/datasets/02_validation_normal.csv \
+    --output results_normal.csv
+
+# Drift 이상 데이터로 검증 (높은 이상 탐지율 기대)
+python scripts/inference_simple.py \
+    --input data/datasets/03_validation_drift_anomaly.csv \
+    --output results_drift.csv
+
+# Spike 이상 데이터로 검증
+python scripts/inference_simple.py \
+    --input data/datasets/04_validation_spike_anomaly.csv \
+    --output results_spike.csv
+```
+
 **입력 데이터 형식**:
+
 - **파일 형식**: CSV, Excel (.xlsx, .xls), Parquet
 - **필수 컬럼**: `timestamp, endpoint_id, udp_echo_rtt_ms, ecpri_delay_us, lbm_rtt_ms, ccm_miss_count`
-- **데이터 요구사항**: 정상 데이터만 사용 (이상 데이터 제외)
+- **데이터 요구사항**:
+  - 학습: 정상 데이터만 사용 (이상 데이터 제외)
+  - 검증: 정상/비정상 데이터 모두 사용 가능
 
 ### 📈 학습 결과
 

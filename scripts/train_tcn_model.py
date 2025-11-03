@@ -166,6 +166,10 @@ def main():
         normalize=True,
     )
 
+    # Train dataset에서 scaler 가져오기 (모델 저장 시 함께 저장)
+    train_dataset = train_loader.dataset
+    scaler = train_dataset.scaler if hasattr(train_dataset, 'scaler') else None
+
     print(f"\n{'='*60}")
     print(f"데이터셋 로딩 완료")
     print(f"{'='*60}")
@@ -255,11 +259,26 @@ def main():
         performance=performance,
     )
 
+    # Scaler 저장 (정규화 시 필수)
+    if scaler is not None:
+        import joblib
+        scaler_path = model_path.with_name(f"{args.metric_type}_v{args.version}_scaler.pkl")
+        joblib.dump(scaler, scaler_path)
+        print(f"\nScaler 저장 완료: {scaler_path}")
+        logger.info(
+            "Scaler 저장 완료",
+            path=str(scaler_path),
+            mean=float(scaler.mean_[0]),
+            std=float(scaler.var_[0] ** 0.5),
+        )
+
     print(f"\n{'='*60}")
     print(f"모델 저장 완료")
     print(f"{'='*60}")
     print(f"경로: {model_path.absolute()}")
     print(f"메타데이터: {model_path.with_suffix('.json')}")
+    if scaler is not None:
+        print(f"Scaler: {scaler_path.absolute()}")
     print(f"{'='*60}\n")
 
     # 성능 리포트 저장

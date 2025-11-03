@@ -322,16 +322,19 @@ class ResidualDetector(BaseDetector):
     
     def _load_pretrained_models(self) -> None:
         """Load pre-trained TCN models from disk."""
+        import joblib
+
         model_files = {
-            "udp_echo": "udp_echo_vv2.0.0",
-            "ecpri": "ecpri_vv2.0.0",
-            "lbm": "lbm_vv2.0.0",
+            "udp_echo": "udp_echo_v2.0.1",
+            "ecpri": "ecpri_v2.0.1",
+            "lbm": "lbm_v2.0.1",
         }
 
         for metric_type, model_name in model_files.items():
             try:
                 model_path = self.model_dir / f"{model_name}.pth"
                 metadata_path = self.model_dir / f"{model_name}.json"
+                scaler_path = self.model_dir / f"{model_name}_scaler.pkl"
 
                 if not model_path.exists() or not metadata_path.exists():
                     self.logger.warning(
@@ -359,6 +362,20 @@ class ResidualDetector(BaseDetector):
                 model.eval()
 
                 self.models[metric_type] = model
+
+                # Load scaler if exists
+                if scaler_path.exists():
+                    self.scalers[metric_type] = joblib.load(scaler_path)
+                    self.logger.info(
+                        f"Loaded scaler for {metric_type}",
+                        mean=float(self.scalers[metric_type].mean_[0]),
+                        std=float(self.scalers[metric_type].var_[0] ** 0.5)
+                    )
+                else:
+                    self.logger.warning(
+                        f"Scaler not found for {metric_type}, using unfitted scaler",
+                        scaler_path=str(scaler_path)
+                    )
 
                 self.logger.info(
                     f"Loaded pre-trained TCN model for {metric_type}",

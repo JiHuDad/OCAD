@@ -26,7 +26,52 @@ OCAD는 **학습-추론 분리 아키텍처**를 사용하며, **Phase 1-4 완�
 - **TCN 모델 3개**: UDP Echo, eCPRI, LBM (예측-잔차 기반 탐지)
 - **Isolation Forest 1개**: 다변량 이상 탐지
 
-### 🚀 빠른 시작: 추론 실행
+### ⚡ 원스톱 Shell Scripts (추천!)
+
+복잡한 파이프라인을 간단한 명령어로 실행할 수 있습니다:
+
+```bash
+# 1️⃣ 데이터셋 생성 (CSV + Parquet 변환)
+./scripts/make_dataset.sh
+
+# 생성되는 파일:
+#   - 01_training_normal.csv (학습용 정상 데이터)
+#   - 02_validation_normal.csv (검증용 정상 데이터)
+#   - 03_validation_drift_anomaly.csv (Drift 이상)
+#   - 04_validation_spike_anomaly.csv (Spike 이상)
+#   - 05_validation_packet_loss_anomaly.csv (패킷 손실)
+#   + Parquet 파일들 (data/processed/)
+
+# 2️⃣ 모델 학습 (TCN 3개 + Isolation Forest)
+./scripts/train.sh --train-data data/datasets/01_training_normal.csv
+
+# 학습되는 모델:
+#   - udp_echo_v2.0.2.pth + scaler
+#   - ecpri_v2.0.2.pth + scaler
+#   - lbm_v2.0.2.pth + scaler
+#   - isolation_forest_2.0.2.pkl + scaler
+
+# 3️⃣ 추론 + 리포트 생성
+./scripts/infer.sh --input data/datasets/03_validation_drift_anomaly.csv
+
+# 결과:
+#   - data/results/03_validation_drift_anomaly_result.csv (추론 결과)
+#   - reports/03_validation_drift_anomaly_report.md (상세 리포트)
+```
+
+**상세 옵션**:
+```bash
+# 데이터셋 생성 옵션
+./scripts/make_dataset.sh --help
+
+# 학습 옵션 (에포크, 배치 크기, 버전 등)
+./scripts/train.sh --help
+
+# 추론 옵션 (출력 파일, 리포트 옵션 등)
+./scripts/infer.sh --help
+```
+
+### 🚀 빠른 시작: 추론 실행 (Python 직접 사용)
 
 #### 1️⃣ 자신의 데이터로 추론 (권장!)
 

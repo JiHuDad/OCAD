@@ -132,13 +132,24 @@ fi
 echo "========================================================================"
 echo ""
 
+# Python 명령어 확인 (python3 우선)
+PYTHON_CMD="python3"
+if ! command -v python3 &> /dev/null; then
+    if command -v python &> /dev/null; then
+        PYTHON_CMD="python"
+    else
+        echo "❌ Python을 찾을 수 없습니다."
+        exit 1
+    fi
+fi
+
 # Step 1: 추론 실행
 echo "========================================================================"
 echo "🚀 Step 1: 추론 실행 중..."
 echo "========================================================================"
 echo ""
 
-python scripts/inference_simple.py \
+$PYTHON_CMD scripts/inference_simple.py \
     --input "$INPUT_DATA" \
     --output "$OUTPUT_FILE" \
     --model-dir "$MODEL_DIR"
@@ -159,7 +170,7 @@ if [ "$GENERATE_REPORT" = true ]; then
     echo "========================================================================"
     echo ""
 
-    python scripts/generate_inference_report.py \
+    $PYTHON_CMD scripts/generate_inference_report.py \
         --inference-result "$OUTPUT_FILE" \
         --original-data "$INPUT_DATA" \
         --output "$REPORT_FILE"
@@ -201,7 +212,7 @@ fi
 echo ""
 echo "추론 결과 요약:"
 echo "========================================================================"
-python << EOF
+$PYTHON_CMD << EOF
 import pandas as pd
 
 df = pd.read_csv('$OUTPUT_FILE')

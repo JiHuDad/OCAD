@@ -108,9 +108,20 @@ echo "출력 포맷: $FORMATS"
 echo "========================================================================"
 echo ""
 
+# Python 명령어 확인 (python3 우선)
+PYTHON_CMD="python3"
+if ! command -v python3 &> /dev/null; then
+    if command -v python &> /dev/null; then
+        PYTHON_CMD="python"
+    else
+        echo "❌ Python을 찾을 수 없습니다."
+        exit 1
+    fi
+fi
+
 # Step 1: CSV 데이터 생성
 echo "📁 Step 1: CSV 데이터 생성 중..."
-python scripts/generate_datasets.py \
+$PYTHON_CMD scripts/generate_datasets.py \
     --output-dir "$OUTPUT_DIR" \
     --training-hours "$TRAINING_HOURS" \
     --validation-hours "$VALIDATION_HOURS" \
@@ -163,7 +174,7 @@ if [[ "$FORMATS" == *"parquet"* ]]; then
 
         # 학습용 데이터가 있으면 변환
         if [ -f "$OUTPUT_DIR/01_training_normal.csv" ]; then
-            python scripts/prepare_timeseries_data_v2.py \
+            $PYTHON_CMD scripts/prepare_timeseries_data_v2.py \
                 --input "$OUTPUT_DIR/01_training_normal.csv" \
                 --output-dir "$PROCESSED_DIR" \
                 --metric-type "$metric" \
@@ -180,7 +191,7 @@ if [[ "$FORMATS" == *"parquet"* ]]; then
     if [ -f "$OUTPUT_DIR/01_training_normal.csv" ]; then
         echo ""
         echo "  📊 Multivariate 데이터 생성 중..."
-        python scripts/prepare_multivariate_data.py \
+        $PYTHON_CMD scripts/prepare_multivariate_data.py \
             --train-data "$OUTPUT_DIR/01_training_normal.csv" \
             --val-data "$OUTPUT_DIR/02_validation_normal.csv" \
             --test-data "$OUTPUT_DIR/02_validation_normal.csv" \

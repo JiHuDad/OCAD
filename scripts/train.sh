@@ -137,6 +137,17 @@ echo "모델 디렉토리: $MODEL_DIR"
 echo "========================================================================"
 echo ""
 
+# Python 명령어 확인 (python3 우선)
+PYTHON_CMD="python3"
+if ! command -v python3 &> /dev/null; then
+    if command -v python &> /dev/null; then
+        PYTHON_CMD="python"
+    else
+        echo "❌ Python을 찾을 수 없습니다."
+        exit 1
+    fi
+fi
+
 # 디렉토리 생성
 mkdir -p "$PROCESSED_DIR"
 mkdir -p "$MODEL_DIR/tcn"
@@ -152,7 +163,7 @@ echo ""
 # TCN용 시계열 데이터 준비 (3개 메트릭)
 for metric in udp_echo ecpri lbm; do
     echo "📊 $metric 시계열 데이터 준비 중..."
-    python scripts/prepare_timeseries_data_v2.py \
+    $PYTHON_CMD scripts/prepare_timeseries_data_v2.py \
         --input "$TRAIN_DATA" \
         --output-dir "$PROCESSED_DIR" \
         --metric-type "$metric" \
@@ -167,7 +178,7 @@ done
 
 # Isolation Forest용 다변량 데이터 준비
 echo "📊 Multivariate 데이터 준비 중..."
-python scripts/prepare_multivariate_data.py \
+$PYTHON_CMD scripts/prepare_multivariate_data.py \
     --train-data "$TRAIN_DATA" \
     --val-data "$VAL_DATA" \
     --test-data "$TEST_DATA" \
@@ -193,7 +204,7 @@ for metric in udp_echo ecpri lbm; do
     echo "🎯 $metric TCN 학습 중..."
     echo "----------------------------------------"
 
-    python scripts/train_tcn_model.py \
+    $PYTHON_CMD scripts/train_tcn_model.py \
         --metric-type "$metric" \
         --train-data "$PROCESSED_DIR/timeseries_${metric}_train.parquet" \
         --val-data "$PROCESSED_DIR/timeseries_${metric}_val.parquet" \
@@ -219,7 +230,7 @@ echo "🌲 Step 3: Isolation Forest 학습"
 echo "========================================================================"
 echo ""
 
-python scripts/train_isolation_forest.py \
+$PYTHON_CMD scripts/train_isolation_forest.py \
     --train-data "$PROCESSED_DIR/multivariate_train.parquet" \
     --val-data "$PROCESSED_DIR/multivariate_val.parquet" \
     --test-data "$PROCESSED_DIR/multivariate_test.parquet" \

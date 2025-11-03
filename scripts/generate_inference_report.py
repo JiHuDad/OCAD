@@ -134,11 +134,69 @@ class InferenceReportGenerator:
 
         return analysis
 
+    def analyze_multivariate_patterns(self) -> dict:
+        """다변량 패턴 분석 (개별 메트릭이 정상이지만 조합이 이상인 경우)."""
+        anomaly_df = self.merged_df[self.merged_df['is_anomaly'] == 1]
+
+        if len(anomaly_df) == 0:
+            return {}
+
+        normal_df = self.merged_df[self.merged_df['is_anomaly'] == 0]
+
+        # Multivariate Detector가 주도한 이상 탐지 찾기
+        # (Multivariate Score가 높고, 개별 메트릭은 정상 범위인 케이스)
+        multivariate_driven = anomaly_df[
+            (anomaly_df['multivariate_score'] > 0.3) &
+            (anomaly_df['residual_score'] < 0.3)
+        ]
+
+        if len(multivariate_driven) == 0:
+            return {}
+
+        # 메트릭 간 상관관계 분석
+        metrics = ['udp_echo_rtt_ms', 'ecpri_delay_us', 'lbm_rtt_ms']
+        available_metrics = [m for m in metrics if m in normal_df.columns]
+
+        if len(available_metrics) < 2:
+            return {}
+
+        # 정상 데이터의 상관관계
+        normal_corr = normal_df[available_metrics].corr()
+
+        # 이상 데이터의 상관관계
+        anomaly_corr = multivariate_driven[available_metrics].corr()
+
+        # 상관관계 변화 계산
+        corr_changes = []
+        for i in range(len(available_metrics)):
+            for j in range(i + 1, len(available_metrics)):
+                metric1 = available_metrics[i]
+                metric2 = available_metrics[j]
+                normal_val = normal_corr.loc[metric1, metric2]
+                anomaly_val = anomaly_corr.loc[metric1, metric2]
+                change = abs(anomaly_val - normal_val)
+
+                if change > 0.3:  # 상관관계가 크게 변한 경우
+                    corr_changes.append({
+                        'metric1': metric1,
+                        'metric2': metric2,
+                        'normal_corr': normal_val,
+                        'anomaly_corr': anomaly_val,
+                        'change': change,
+                    })
+
+        return {
+            'multivariate_driven_count': len(multivariate_driven),
+            'correlation_changes': corr_changes,
+            'available_metrics': available_metrics,
+        }
+
     def generate_markdown_report(self, output_path: Path):
         """Markdown 리포트 생성."""
         summary = self.generate_summary()
         periods = self.find_anomaly_periods()
         causes = self.analyze_anomaly_causes()
+        multivariate = self.analyze_multivariate_patterns()
 
         report_lines = []
 
@@ -232,6 +290,70 @@ class InferenceReportGenerator:
                         report_lines.append(f"**⚠️ 경고**: 정상 범위에서 **{abs(data['sigma_diff']):.1f} 표준편차** 벗어났습니다. 매우 이례적인 패턴입니다.")
 
                     report_lines.append("")
+
+            report_lines.append("---")
+            report_lines.append("")
+
+        # 다변량 패턴 분석
+        if multivariate and multivariate.get('multivariate_driven_count', 0) > 0:
+            report_lines.append("## 🧩 다변량 패턴 이상 탐지")
+            report_lines.append("")
+            report_lines.append(f"**{multivariate['multivariate_driven_count']}개의 샘플**이 개별 메트릭은 정상 범위이지만, **메트릭 간 상관관계(조합 패턴)가 비정상**으로 탐지되었습니다.")
+            report_lines.append("")
+            report_lines.append("### 💡 다변량 이상 탐지란?")
+            report_lines.append("")
+            report_lines.append("- **개별 메트릭 분석**: 각 메트릭을 독립적으로 평가 (예: RTT < 10ms, 손실 < 1%)")
+            report_lines.append("- **다변량 패턴 분석**: 여러 메트릭의 **조합 패턴**을 평가")
+            report_lines.append("- **핵심**: 개별 값은 정상이지만, **메트릭 간의 상관관계가 학습 데이터와 다른 경우** 이상으로 탐지")
+            report_lines.append("")
+            report_lines.append("### 🔍 탐지된 패턴 변화")
+            report_lines.append("")
+
+            if multivariate.get('correlation_changes'):
+                metric_names = {
+                    'udp_echo_rtt_ms': 'UDP Echo RTT',
+                    'ecpri_delay_us': 'eCPRI Delay',
+                    'lbm_rtt_ms': 'LBM RTT',
+                }
+
+                report_lines.append("정상 데이터와 이상 데이터의 **메트릭 간 상관관계 변화**:")
+                report_lines.append("")
+
+                for change in multivariate['correlation_changes']:
+                    m1_name = metric_names.get(change['metric1'], change['metric1'])
+                    m2_name = metric_names.get(change['metric2'], change['metric2'])
+
+                    report_lines.append(f"#### {m1_name} ↔ {m2_name}")
+                    report_lines.append("")
+                    report_lines.append(f"- **정상 시 상관계수**: {change['normal_corr']:.3f}")
+                    report_lines.append(f"- **이상 시 상관계수**: {change['anomaly_corr']:.3f}")
+                    report_lines.append(f"- **변화량**: {change['change']:.3f}")
+                    report_lines.append("")
+
+                    # 해석 추가
+                    if abs(change['normal_corr']) > 0.5 and abs(change['anomaly_corr']) < 0.2:
+                        report_lines.append(f"**💡 해석**: 정상 시에는 {m1_name}과 {m2_name}이 **{'정' if change['normal_corr'] > 0 else '부'}의 상관관계**를 보였으나, 이상 구간에서는 **상관관계가 약화**되었습니다. 이는 두 메트릭이 독립적으로 변동하는 비정상 패턴입니다.")
+                    elif abs(change['normal_corr']) < 0.2 and abs(change['anomaly_corr']) > 0.5:
+                        report_lines.append(f"**💡 해석**: 정상 시에는 {m1_name}과 {m2_name}이 **독립적**이었으나, 이상 구간에서는 **강한 {'정' if change['anomaly_corr'] > 0 else '부'}의 상관관계**가 나타났습니다. 이는 학습 데이터에서 보지 못한 비정상 패턴입니다.")
+                    else:
+                        report_lines.append(f"**💡 해석**: {m1_name}과 {m2_name}의 상관관계가 정상 데이터와 크게 달라졌습니다. 이는 네트워크 경로 변경, 장비 동작 모드 변화 등의 신호일 수 있습니다.")
+
+                    report_lines.append("")
+
+            else:
+                report_lines.append("메트릭 간 상관관계 변화는 미미하지만, **고차원 공간에서의 패턴**이 정상 학습 데이터와 다른 것으로 탐지되었습니다.")
+                report_lines.append("")
+                report_lines.append("이는 Isolation Forest가 2개 이상의 메트릭을 조합했을 때 학습 데이터와 다른 **드문 패턴(isolated)**을 발견했음을 의미합니다.")
+                report_lines.append("")
+
+            report_lines.append("### ⚠️ 왜 중요한가?")
+            report_lines.append("")
+            report_lines.append("다변량 패턴 이상 탐지는 **개별 임계값 기반 탐지로는 놓칠 수 있는 미묘한 장애 신호**를 조기 발견할 수 있습니다:")
+            report_lines.append("")
+            report_lines.append("- **하드웨어 부분 고장**: 개별 메트릭은 임계값 이하지만, 메트릭 조합이 비정상")
+            report_lines.append("- **네트워크 경로 변경**: RTT, 손실률은 정상이지만, 그들의 관계가 평소와 다름")
+            report_lines.append("- **간헐적 문제**: 평균적으로 정상이지만, 메트릭 간 동기화 패턴이 변함")
+            report_lines.append("")
 
             report_lines.append("---")
             report_lines.append("")
@@ -380,7 +502,23 @@ class InferenceReportGenerator:
                     for problem in problems:
                         report_lines.append(f"- {problem}")
                 else:
-                    report_lines.append("**💡 종합 판단**: 모든 메트릭이 정상 범위이지만, 다변량 패턴 분석에서 이상으로 탐지되었습니다.")
+                    # 개별 메트릭은 정상인데 이상으로 탐지된 경우
+                    residual_score = row['residual_score'] if 'residual_score' in row.index else 0
+                    multivariate_score = row['multivariate_score'] if 'multivariate_score' in row.index else 0
+
+                    if residual_score > 0.5 and multivariate_score < 0.3:
+                        report_lines.append("**💡 종합 판단**: 개별 메트릭 값은 정상 범위이지만, **시계열 예측 모델(TCN)이 예상하지 못한 패턴**을 보이고 있습니다.")
+                        report_lines.append("")
+                        report_lines.append("- **Residual Score 높음**: TCN 모델은 정상 데이터에서 메트릭 간 관계를 학습했는데, 현재 데이터는 그 관계를 벗어났습니다.")
+                        report_lines.append("- **예시**: 정상 시 \"UDP RTT ↑ → eCPRI Delay ↑\"인데, 현재는 \"UDP RTT ↑ → eCPRI Delay ↓\" (역의 관계)")
+                        report_lines.append("- **의미**: 메트릭 간 상관관계가 변했거나, 네트워크 경로/장비 동작 모드가 바뀌었을 가능성")
+                    elif multivariate_score > 0.3:
+                        report_lines.append("**💡 종합 판단**: 모든 메트릭이 정상 범위이지만, **메트릭 간 조합 패턴(다변량)이 비정상**으로 탐지되었습니다.")
+                        report_lines.append("")
+                        report_lines.append("- **Isolation Forest 탐지**: 학습 데이터에서 보지 못한 메트릭 조합 패턴")
+                        report_lines.append("- **의미**: 개별 임계값으로는 놓칠 수 있는 미묘한 이상 신호")
+                    else:
+                        report_lines.append("**💡 종합 판단**: 모든 메트릭이 정상 범위이지만, 패턴 분석에서 이상으로 탐지되었습니다.")
 
                 report_lines.append("")
                 report_lines.append("---")

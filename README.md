@@ -69,9 +69,52 @@ python scripts/validate_all_models.py
 
 ### 📊 결과 확인 방법
 
-추론 결과는 3가지 방법으로 확인할 수 있습니다:
+추론 결과는 4가지 방법으로 확인할 수 있습니다:
 
-#### 1. CSV 파일 (추천!)
+#### 1. 상세 리포트 생성 (⭐ 추천!)
+
+```bash
+# 추론 결과 리포트 생성 (왜 이상인지 쉽게 설명)
+python scripts/generate_inference_report.py \
+    --inference-result data/results/my_inference.csv \
+    --original-data data/datasets/03_validation_drift_anomaly.csv \
+    --output reports/my_report.md
+
+# 리포트 확인
+cat reports/my_report.md
+```
+
+**리포트 내용**:
+- 📊 전체 요약 (이상 탐지율, 평균 점수)
+- ⚠️ 이상 구간 분석 (시작/종료 시간, 지속 시간)
+- 🔍 이상 원인 분석 (메트릭별 정상/이상 비교, 변화율, 표준편차)
+- 💡 권장 사항 (이상 탐지율에 따른 조치 방법)
+- 📋 이상 데이터 샘플 (상위 10개)
+  - 각 샘플마다 메트릭별 상세 분석 (상태 표시기: 🔴🟡🟢)
+  - 정상 평균 대비 변화율 (%) 및 표준편차 배수 (σ)
+  - 종합 판단 (어떤 메트릭에 문제가 있는지 명확히 설명)
+
+**샘플 예시**:
+
+```markdown
+### 🔴 이상 샘플 #1
+**시간**: 2025-10-02 01:40:00
+**최종 이상 점수**: 0.6585
+
+**메트릭 분석**:
+- 🔴 **UDP Echo RTT**: 19.70 ms
+  - 정상 평균: 5.00 ms
+  - 차이: +294.4% (+26.95σ)
+- 🔴 **eCPRI Delay**: 226.12 μs
+  - 정상 평균: 99.47 μs
+  - 차이: +127.3% (+13.32σ)
+
+**💡 종합 판단**:
+- UDP Echo RTT가 정상 대비 294% 증가
+- eCPRI 지연이 정상 대비 127% 증가
+```
+
+#### 2. CSV 파일
 
 ```bash
 # 추론 결과 CSV 파일 확인
@@ -86,7 +129,7 @@ cat data/results/my_inference.csv
 # Excel로 열거나 pandas로 분석 가능
 ```
 
-#### 2. 콘솔 출력
+#### 3. 콘솔 출력
 
 ```bash
 python scripts/inference_simple.py --input YOUR_DATA.csv
@@ -98,7 +141,7 @@ python scripts/inference_simple.py --input YOUR_DATA.csv
 # - 최종 요약 (이상 탐지율, 평균 점수)
 ```
 
-#### 3. 개별 모델 테스트
+#### 4. 개별 모델 테스트
 
 ```bash
 # TCN 모델만 테스트
@@ -144,7 +187,7 @@ python scripts/generate_datasets.py \
 ```bash
 # Step 1: 학습 데이터 준비 (Parquet 포맷으로 변환)
 python scripts/prepare_timeseries_data_v2.py \
-    --input-csv data/datasets/01_training_normal.csv \
+    --input data/datasets/01_training_normal.csv \
     --output-dir data/processed \
     --metric-type udp_echo
 
@@ -156,6 +199,11 @@ python scripts/train_tcn_model.py \
     --metric-type udp_echo \
     --epochs 50 \
     --batch-size 32
+
+# 저장 위치:
+#   - 모델: ocad/models/tcn/udp_echo_v1.0.0.pth
+#   - 메타데이터: ocad/models/tcn/udp_echo_v1.0.0.json
+#   - 성능 리포트: ocad/models/metadata/performance_reports/udp_echo_v1.0.0_report.json
 
 # 다른 메트릭 학습: --metric-type ecpri 또는 lbm
 ```
@@ -172,8 +220,12 @@ python scripts/prepare_multivariate_data.py \
 python scripts/train_isolation_forest.py \
     --train-data data/processed/multivariate_train.parquet \
     --val-data data/processed/multivariate_val.parquet \
-    --test-data data/processed/multivariate_test.parquet \
-    --output ocad/models/isolation_forest/my_model_v1.0.0.pkl
+    --test-data data/processed/multivariate_test.parquet
+
+# 저장 위치 (기본값):
+#   - 모델: ocad/models/isolation_forest/isolation_forest_v1.0.0.pkl
+#   - 스케일러: ocad/models/isolation_forest/isolation_forest_v1.0.0_scaler.pkl
+#   - 메타데이터: ocad/models/isolation_forest/isolation_forest_v1.0.0.json
 ```
 
 #### 3️⃣ 학습된 모델 검증

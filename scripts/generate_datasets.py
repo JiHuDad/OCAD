@@ -418,7 +418,7 @@ def main():
     print(f"\n💡 다음 단계:")
     print(f"   1. 학습 데이터로 모델 학습:")
     print(f"      python scripts/prepare_timeseries_data_v2.py \\")
-    print(f"          --input-csv {args.output_dir}/01_training_normal.csv \\")
+    print(f"          --input {args.output_dir}/01_training_normal.csv \\")
     print(f"          --output-dir data/processed --metric-type udp_echo")
     print(f"      python scripts/train_tcn_model.py --metric-type udp_echo")
     print(f"")

@@ -1,396 +1,464 @@
 #!/usr/bin/env python3
-"""
-추론 결과 상세 보고서 생성
+"""추론 결과 리포트 생성 스크립트.
 
-Usage:
-    python scripts/generate_inference_report.py \\
-        --input data/inference_results.csv \\
-        --output reports/inference_report.md
+추론 결과를 분석하고 시각화된 리포트를 생성합니다.
+- 시계열 그래프로 이상 구간 표시
+- 이상 데이터 통계 및 설명
+- Markdown 형식의 리포트 생성
 """
 
 import argparse
 import pandas as pd
 import numpy as np
-from pathlib import Path
 from datetime import datetime
-from sklearn.metrics import confusion_matrix, classification_report
-import matplotlib.pyplot as plt
-import seaborn as sns
+from pathlib import Path
+import sys
+
+# 프로젝트 루트를 경로에 추가
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-def generate_report(input_file: Path, output_file: Path):
-    """추론 결과 보고서 생성"""
+class InferenceReportGenerator:
+    """추론 결과 리포트 생성기."""
 
-    # 데이터 로드
-    df = pd.read_csv(input_file)
+    def __init__(self, inference_result_path: Path, original_data_path: Path):
+        """초기화.
 
-    # 타임스탬프 변환
-    df['timestamp_dt'] = pd.to_datetime(df['timestamp'], unit='ms')
+        Args:
+            inference_result_path: 추론 결과 CSV 파일 경로
+            original_data_path: 원본 데이터 CSV 파일 경로
+        """
+        self.inference_result_path = inference_result_path
+        self.original_data_path = original_data_path
 
-    # 보고서 작성
-    report_lines = []
+        # 데이터 로드
+        self.results_df = pd.read_csv(inference_result_path)
+        self.original_df = pd.read_csv(original_data_path)
 
-    # 헤더
-    report_lines.append("# OCAD 추론 결과 보고서")
-    report_lines.append("")
-    report_lines.append(f"**생성 일시**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    report_lines.append(f"**입력 파일**: {input_file}")
-    report_lines.append(f"**총 레코드**: {len(df):,}개")
-    report_lines.append("")
-    report_lines.append("---")
-    report_lines.append("")
+        # timestamp를 datetime으로 변환
+        self.results_df['timestamp'] = pd.to_datetime(self.results_df['timestamp'])
+        self.original_df['timestamp'] = pd.to_datetime(self.original_df['timestamp'])
 
-    # 1. 전체 요약
-    report_lines.append("## 📊 전체 요약")
-    report_lines.append("")
-
-    # 시간 범위
-    start_time = df['timestamp_dt'].min()
-    end_time = df['timestamp_dt'].max()
-    duration = end_time - start_time
-    report_lines.append(f"- **분석 기간**: {start_time} ~ {end_time}")
-    report_lines.append(f"- **분석 시간**: {duration}")
-    report_lines.append("")
-
-    # 엔드포인트
-    endpoints = df['endpoint_id'].unique()
-    report_lines.append(f"- **엔드포인트 수**: {len(endpoints)}개")
-    for endpoint in endpoints:
-        count = len(df[df['endpoint_id'] == endpoint])
-        report_lines.append(f"  - `{endpoint}`: {count:,}개 레코드")
-    report_lines.append("")
-
-    # 라벨 분포
-    if 'label' in df.columns:
-        label_dist = df['label'].value_counts()
-        report_lines.append("### 실제 라벨 분포")
-        report_lines.append("")
-        for label, count in label_dist.items():
-            pct = count / len(df) * 100
-            report_lines.append(f"- **{label}**: {count:,}개 ({pct:.1f}%)")
-        report_lines.append("")
-
-    # 예측 분포
-    pred_dist = df['predicted_label'].value_counts()
-    report_lines.append("### 예측 라벨 분포")
-    report_lines.append("")
-    for label, count in pred_dist.items():
-        pct = count / len(df) * 100
-        report_lines.append(f"- **{label}**: {count:,}개 ({pct:.1f}%)")
-    report_lines.append("")
-
-    report_lines.append("---")
-    report_lines.append("")
-
-    # 2. 성능 지표
-    if 'label' in df.columns:
-        report_lines.append("## 🎯 성능 지표")
-        report_lines.append("")
-
-        # 정확도
-        accuracy = (df['label'] == df['predicted_label']).mean() * 100
-        report_lines.append(f"### 정확도: **{accuracy:.2f}%**")
-        report_lines.append("")
-
-        # Confusion Matrix
-        cm = confusion_matrix(df['label'], df['predicted_label'])
-        report_lines.append("### Confusion Matrix")
-        report_lines.append("")
-        report_lines.append("```")
-        report_lines.append("예측       anomaly  normal")
-        report_lines.append("실제")
-
-        labels = sorted(df['label'].unique())
-        for i, actual_label in enumerate(labels):
-            row = f"{actual_label:10s}"
-            for j in range(len(labels)):
-                row += f" {cm[i][j]:7d}"
-            report_lines.append(row)
-        report_lines.append("```")
-        report_lines.append("")
-
-        # 세부 지표
-        from sklearn.metrics import precision_recall_fscore_support
-
-        precision, recall, f1, support = precision_recall_fscore_support(
-            df['label'], df['predicted_label'], average='binary', pos_label='anomaly'
+        # 두 데이터 병합
+        self.merged_df = pd.merge(
+            self.original_df,
+            self.results_df[['timestamp', 'endpoint_id', 'residual_score',
+                             'multivariate_score', 'final_score', 'is_anomaly']],
+            on=['timestamp', 'endpoint_id'],
+            how='left'
         )
 
-        report_lines.append("### 세부 성능 지표")
-        report_lines.append("")
-        report_lines.append(f"- **Precision (정밀도)**: {precision:.2%}")
-        report_lines.append(f"  - 이상으로 예측한 것 중 실제 이상 비율")
-        report_lines.append(f"- **Recall (재현율)**: {recall:.2%}")
-        report_lines.append(f"  - 실제 이상 중 탐지한 비율")
-        report_lines.append(f"- **F1 Score**: {f1:.2%}")
-        report_lines.append(f"  - Precision과 Recall의 조화 평균")
-        report_lines.append("")
+    def generate_summary(self) -> dict:
+        """전체 요약 통계 생성."""
+        total_samples = len(self.results_df)
+        anomaly_count = self.results_df['is_anomaly'].sum()
+        anomaly_rate = (anomaly_count / total_samples) * 100
 
-        # True/False Positive/Negative
-        tp = ((df['label'] == 'anomaly') & (df['predicted_label'] == 'anomaly')).sum()
-        fp = ((df['label'] == 'normal') & (df['predicted_label'] == 'anomaly')).sum()
-        tn = ((df['label'] == 'normal') & (df['predicted_label'] == 'normal')).sum()
-        fn = ((df['label'] == 'anomaly') & (df['predicted_label'] == 'normal')).sum()
+        # 점수 통계
+        residual_mean = self.results_df['residual_score'].mean()
+        multivariate_mean = self.results_df['multivariate_score'].mean()
+        final_mean = self.results_df['final_score'].mean()
 
-        report_lines.append("### 분류 결과 상세")
-        report_lines.append("")
-        report_lines.append(f"- **True Positive (TP)**: {tp:,}개 - ✅ 이상을 이상으로 정확히 탐지")
-        report_lines.append(f"- **False Positive (FP)**: {fp:,}개 - ⚠️ 정상을 이상으로 오탐")
-        report_lines.append(f"- **True Negative (TN)**: {tn:,}개 - ✅ 정상을 정상으로 정확히 분류")
-        report_lines.append(f"- **False Negative (FN)**: {fn:,}개 - ❌ 이상을 정상으로 미탐")
-        report_lines.append("")
+        return {
+            'total_samples': total_samples,
+            'anomaly_count': anomaly_count,
+            'anomaly_rate': anomaly_rate,
+            'normal_count': total_samples - anomaly_count,
+            'residual_mean': residual_mean,
+            'multivariate_mean': multivariate_mean,
+            'final_mean': final_mean,
+        }
 
+    def find_anomaly_periods(self) -> list:
+        """이상 구간 찾기."""
+        anomaly_df = self.merged_df[self.merged_df['is_anomaly'] == 1].copy()
+
+        if len(anomaly_df) == 0:
+            return []
+
+        # 연속된 이상 구간 그룹화
+        anomaly_df['group'] = (anomaly_df['timestamp'].diff() > pd.Timedelta(minutes=2)).cumsum()
+
+        periods = []
+        for group_id, group in anomaly_df.groupby('group'):
+            period = {
+                'start': group['timestamp'].min(),
+                'end': group['timestamp'].max(),
+                'duration_minutes': (group['timestamp'].max() - group['timestamp'].min()).total_seconds() / 60,
+                'count': len(group),
+                'max_score': group['final_score'].max(),
+                'avg_score': group['final_score'].mean(),
+            }
+            periods.append(period)
+
+        return periods
+
+    def analyze_anomaly_causes(self) -> dict:
+        """이상 원인 분석."""
+        anomaly_df = self.merged_df[self.merged_df['is_anomaly'] == 1]
+
+        if len(anomaly_df) == 0:
+            return {}
+
+        # 메트릭별 평균값 비교
+        normal_df = self.merged_df[self.merged_df['is_anomaly'] == 0]
+
+        analysis = {}
+        metrics = ['udp_echo_rtt_ms', 'ecpri_delay_us', 'lbm_rtt_ms', 'ccm_miss_count']
+
+        for metric in metrics:
+            if metric in anomaly_df.columns and metric in normal_df.columns:
+                normal_mean = normal_df[metric].mean()
+                anomaly_mean = anomaly_df[metric].mean()
+                normal_std = normal_df[metric].std()
+
+                # 변화율 계산
+                if normal_mean > 0:
+                    change_pct = ((anomaly_mean - normal_mean) / normal_mean) * 100
+                else:
+                    change_pct = 0
+
+                # 표준편차 배수
+                if normal_std > 0:
+                    sigma_diff = (anomaly_mean - normal_mean) / normal_std
+                else:
+                    sigma_diff = 0
+
+                analysis[metric] = {
+                    'normal_mean': normal_mean,
+                    'anomaly_mean': anomaly_mean,
+                    'change_pct': change_pct,
+                    'sigma_diff': sigma_diff,
+                    'is_significant': abs(change_pct) > 20 or abs(sigma_diff) > 2,
+                }
+
+        return analysis
+
+    def generate_markdown_report(self, output_path: Path):
+        """Markdown 리포트 생성."""
+        summary = self.generate_summary()
+        periods = self.find_anomaly_periods()
+        causes = self.analyze_anomaly_causes()
+
+        report_lines = []
+
+        # 헤더
+        report_lines.append("# OCAD 추론 결과 리포트")
+        report_lines.append("")
+        report_lines.append(f"**생성 시간**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report_lines.append(f"**원본 데이터**: {self.original_data_path.name}")
+        report_lines.append(f"**추론 결과**: {self.inference_result_path.name}")
+        report_lines.append("")
         report_lines.append("---")
         report_lines.append("")
 
-    # 3. 탐지기별 분석
-    report_lines.append("## 🔍 탐지기별 분석")
-    report_lines.append("")
-
-    detector_cols = [col for col in df.columns if col.endswith('_score')]
-
-    for col in detector_cols:
-        detector_name = col.replace('_score', '')
-        mean_score = df[col].mean()
-        max_score = df[col].max()
-
-        # 점수 > 0인 경우
-        active = df[df[col] > 0]
-        active_count = len(active)
-        active_pct = active_count / len(df) * 100
-
-        report_lines.append(f"### {detector_name.replace('_', ' ').title()}")
+        # 전체 요약
+        report_lines.append("## 📊 전체 요약")
         report_lines.append("")
-        report_lines.append(f"- **평균 점수**: {mean_score:.3f}")
-        report_lines.append(f"- **최대 점수**: {max_score:.3f}")
-        report_lines.append(f"- **활성화 횟수**: {active_count:,}회 ({active_pct:.1f}%)")
-
-        if len(active) > 0:
-            report_lines.append(f"- **활성화 시 평균 점수**: {active[col].mean():.3f}")
+        report_lines.append(f"- **총 샘플 수**: {summary['total_samples']:,}개")
+        report_lines.append(f"- **정상 데이터**: {summary['normal_count']:,}개 ({100 - summary['anomaly_rate']:.1f}%)")
+        report_lines.append(f"- **이상 데이터**: {summary['anomaly_count']:,}개 ({summary['anomaly_rate']:.1f}%)")
+        report_lines.append("")
+        report_lines.append("### 탐지 점수 평균")
+        report_lines.append("")
+        report_lines.append(f"- **Residual Detector**: {summary['residual_mean']:.4f}")
+        report_lines.append(f"- **Multivariate Detector**: {summary['multivariate_mean']:.4f}")
+        report_lines.append(f"- **Final Score**: {summary['final_mean']:.4f}")
+        report_lines.append("")
+        report_lines.append("---")
         report_lines.append("")
 
-    report_lines.append("---")
-    report_lines.append("")
-
-    # 4. 메트릭 통계
-    report_lines.append("## 📈 메트릭 통계")
-    report_lines.append("")
-
-    metric_cols = ['udp_echo_rtt', 'ecpri_delay', 'lbm_rtt']
-
-    for col in metric_cols:
-        if col not in df.columns:
-            continue
-
-        col_data = df[col]
-
-        report_lines.append(f"### {col.replace('_', ' ').upper()}")
-        report_lines.append("")
-        report_lines.append(f"- **평균**: {col_data.mean():.2f}")
-        report_lines.append(f"- **표준편차**: {col_data.std():.2f}")
-        report_lines.append(f"- **최소값**: {col_data.min():.2f}")
-        report_lines.append(f"- **최대값**: {col_data.max():.2f}")
-        report_lines.append(f"- **중앙값**: {col_data.median():.2f}")
-        report_lines.append(f"- **P95**: {col_data.quantile(0.95):.2f}")
-        report_lines.append(f"- **P99**: {col_data.quantile(0.99):.2f}")
-        report_lines.append("")
-
-    report_lines.append("---")
-    report_lines.append("")
-
-    # 5. False Negative 분석 (이상을 정상으로 오판)
-    if 'label' in df.columns:
-        false_negatives = df[(df['label'] == 'anomaly') & (df['predicted_label'] == 'normal')]
-
-        if len(false_negatives) > 0:
-            report_lines.append("## ❌ False Negative 분석 (미탐지)")
+        # 이상 구간 분석
+        if periods:
+            report_lines.append("## ⚠️ 이상 구간 분석")
             report_lines.append("")
-            report_lines.append(f"**총 {len(false_negatives):,}건의 이상이 탐지되지 않았습니다.**")
+            report_lines.append(f"**총 {len(periods)}개의 이상 구간이 탐지되었습니다.**")
             report_lines.append("")
 
-            report_lines.append("### 미탐지 메트릭 범위")
-            report_lines.append("")
-            for col in metric_cols:
-                if col in false_negatives.columns:
-                    fn_data = false_negatives[col]
-                    report_lines.append(f"- **{col}**: {fn_data.min():.2f} ~ {fn_data.max():.2f} (평균: {fn_data.mean():.2f})")
-            report_lines.append("")
+            for i, period in enumerate(periods, 1):
+                report_lines.append(f"### 이상 구간 #{i}")
+                report_lines.append("")
+                report_lines.append(f"- **시작 시간**: {period['start'].strftime('%Y-%m-%d %H:%M:%S')}")
+                report_lines.append(f"- **종료 시간**: {period['end'].strftime('%Y-%m-%d %H:%M:%S')}")
+                report_lines.append(f"- **지속 시간**: {period['duration_minutes']:.1f}분")
+                report_lines.append(f"- **이상 샘플 수**: {period['count']}개")
+                report_lines.append(f"- **최대 이상 점수**: {period['max_score']:.4f}")
+                report_lines.append(f"- **평균 이상 점수**: {period['avg_score']:.4f}")
+                report_lines.append("")
 
-            report_lines.append("### 미탐지 사례 (처음 10개)")
+            report_lines.append("---")
             report_lines.append("")
-            report_lines.append("| 시간 | UDP RTT | eCPRI Delay | LBM RTT | Composite Score |")
-            report_lines.append("|------|---------|-------------|---------|-----------------|")
-
-            for _, row in false_negatives.head(10).iterrows():
-                time_str = row['timestamp_dt'].strftime('%H:%M:%S')
-                report_lines.append(
-                    f"| {time_str} | "
-                    f"{row.get('udp_echo_rtt', 0):.2f} | "
-                    f"{row.get('ecpri_delay', 0):.2f} | "
-                    f"{row.get('lbm_rtt', 0):.2f} | "
-                    f"{row.get('composite_score', 0):.3f} |"
-                )
-
+        else:
+            report_lines.append("## ✅ 이상 구간 없음")
+            report_lines.append("")
+            report_lines.append("모든 데이터가 정상 범위 내에 있습니다.")
             report_lines.append("")
             report_lines.append("---")
             report_lines.append("")
 
-    # 6. 탐지된 이상 케이스 (Top 10)
-    anomalies = df[df['predicted_label'] == 'anomaly'].sort_values('composite_score', ascending=False)
+        # 이상 원인 분석
+        if causes:
+            report_lines.append("## 🔍 이상 원인 분석")
+            report_lines.append("")
+            report_lines.append("정상 데이터와 이상 데이터의 메트릭 비교:")
+            report_lines.append("")
 
-    if len(anomalies) > 0:
-        report_lines.append("## ⚠️ 탐지된 이상 케이스 (상위 10개)")
+            metric_names = {
+                'udp_echo_rtt_ms': 'UDP Echo RTT',
+                'ecpri_delay_us': 'eCPRI Delay',
+                'lbm_rtt_ms': 'LBM RTT',
+                'ccm_miss_count': 'CCM Miss Count',
+            }
+
+            for metric, data in causes.items():
+                if data['is_significant']:
+                    report_lines.append(f"### ⚠️ {metric_names.get(metric, metric)}")
+                    report_lines.append("")
+                    report_lines.append(f"- **정상 시 평균**: {data['normal_mean']:.2f}")
+                    report_lines.append(f"- **이상 시 평균**: {data['anomaly_mean']:.2f}")
+                    report_lines.append(f"- **변화율**: {data['change_pct']:+.1f}%")
+                    report_lines.append(f"- **표준편차 배수**: {data['sigma_diff']:+.2f}σ")
+                    report_lines.append("")
+
+                    # 설명 추가
+                    if data['change_pct'] > 50:
+                        report_lines.append(f"**💡 분석**: {metric_names.get(metric, metric)}가 정상 대비 **{data['change_pct']:.0f}% 이상 증가**했습니다. 네트워크 지연 또는 성능 저하가 발생했을 가능성이 높습니다.")
+                    elif data['change_pct'] > 20:
+                        report_lines.append(f"**💡 분석**: {metric_names.get(metric, metric)}가 정상 대비 **{data['change_pct']:.0f}% 증가**했습니다. 성능 저하 징후가 관찰됩니다.")
+                    elif data['change_pct'] < -20:
+                        report_lines.append(f"**💡 분석**: {metric_names.get(metric, metric)}가 정상 대비 **{abs(data['change_pct']):.0f}% 감소**했습니다.")
+
+                    if abs(data['sigma_diff']) > 3:
+                        report_lines.append(f"**⚠️ 경고**: 정상 범위에서 **{abs(data['sigma_diff']):.1f} 표준편차** 벗어났습니다. 매우 이례적인 패턴입니다.")
+
+                    report_lines.append("")
+
+            report_lines.append("---")
+            report_lines.append("")
+
+        # 권장 사항
+        report_lines.append("## 💡 권장 사항")
         report_lines.append("")
-        report_lines.append("가장 높은 이상 점수를 기록한 케이스들:")
-        report_lines.append("")
 
-        report_lines.append("| 순위 | 시간 | UDP RTT | eCPRI Delay | LBM RTT | Composite Score | 실제 라벨 |")
-        report_lines.append("|------|------|---------|-------------|---------|-----------------|-----------|")
-
-        for idx, (_, row) in enumerate(anomalies.head(10).iterrows(), 1):
-            time_str = row['timestamp_dt'].strftime('%H:%M:%S')
-            actual_label = row.get('label', '-')
-            match = "✅" if actual_label == 'anomaly' else "❌"
-
-            report_lines.append(
-                f"| {idx} | {time_str} | "
-                f"{row.get('udp_echo_rtt', 0):.2f} | "
-                f"{row.get('ecpri_delay', 0):.2f} | "
-                f"{row.get('lbm_rtt', 0):.2f} | "
-                f"{row.get('composite_score', 0):.3f} | "
-                f"{actual_label} {match} |"
-            )
+        if summary['anomaly_rate'] > 50:
+            report_lines.append("### 🔴 높은 이상 탐지율 (50% 이상)")
+            report_lines.append("")
+            report_lines.append("1. **즉시 조치 필요**: 네트워크 또는 장비에 심각한 문제가 있을 수 있습니다.")
+            report_lines.append("2. **원인 파악**: 이상 구간의 시작 시간과 시스템 로그를 대조하여 원인을 파악하세요.")
+            report_lines.append("3. **장비 점검**: 해당 시간대에 장비 재시작, 설정 변경 등이 있었는지 확인하세요.")
+        elif summary['anomaly_rate'] > 20:
+            report_lines.append("### 🟡 중간 이상 탐지율 (20-50%)")
+            report_lines.append("")
+            report_lines.append("1. **모니터링 강화**: 이상 구간이 계속 증가하는지 관찰하세요.")
+            report_lines.append("2. **성능 분석**: 네트워크 트래픽 증가, 간섭 등 외부 요인을 확인하세요.")
+            report_lines.append("3. **예방 조치**: 필요시 장비 설정 최적화를 고려하세요.")
+        elif summary['anomaly_rate'] > 5:
+            report_lines.append("### 🟢 낮은 이상 탐지율 (5-20%)")
+            report_lines.append("")
+            report_lines.append("1. **정상 범위**: 일시적인 이상 패턴으로 보입니다.")
+            report_lines.append("2. **계속 모니터링**: 이상 구간이 반복되는지 확인하세요.")
+            report_lines.append("3. **패턴 분석**: 특정 시간대에 이상이 집중되는지 확인하세요.")
+        else:
+            report_lines.append("### ✅ 정상 상태 (5% 미만)")
+            report_lines.append("")
+            report_lines.append("1. **양호한 상태**: 시스템이 정상적으로 동작하고 있습니다.")
+            report_lines.append("2. **일상적 모니터링**: 정기적인 점검을 계속하세요.")
 
         report_lines.append("")
         report_lines.append("---")
         report_lines.append("")
 
-    # 7. 시간대별 분석
-    if 'label' in df.columns:
-        report_lines.append("## 📅 시간대별 분석")
+        # 데이터 샘플 (상세 설명 포함)
+        report_lines.append("## 📋 이상 데이터 샘플 (상위 10개)")
         report_lines.append("")
 
-        # 5분 간격으로 그룹화
-        df['time_window'] = df['timestamp_dt'].dt.floor('5min')
-        time_analysis = df.groupby('time_window').agg({
-            'predicted_label': lambda x: (x == 'anomaly').sum(),
-            'composite_score': 'mean'
-        }).reset_index()
+        anomaly_samples = self.merged_df[self.merged_df['is_anomaly'] == 1].head(10)
 
-        report_lines.append("### 5분 간격 이상 탐지 빈도")
+        if len(anomaly_samples) > 0:
+            # 정상 데이터 기준값 계산
+            normal_df = self.merged_df[self.merged_df['is_anomaly'] == 0]
+            normal_means = {}
+            normal_stds = {}
+
+            for metric in ['udp_echo_rtt_ms', 'ecpri_delay_us', 'lbm_rtt_ms', 'ccm_miss_count']:
+                if metric in normal_df.columns:
+                    normal_means[metric] = normal_df[metric].mean()
+                    normal_stds[metric] = normal_df[metric].std()
+
+            report_lines.append("각 샘플이 왜 이상으로 판단되었는지 상세히 설명합니다:")
+            report_lines.append("")
+
+            for idx, (_, row) in enumerate(anomaly_samples.iterrows(), 1):
+                report_lines.append(f"### 🔴 이상 샘플 #{idx}")
+                report_lines.append("")
+                report_lines.append(f"**시간**: {row['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+                report_lines.append(f"**최종 이상 점수**: {row['final_score']:.4f}")
+                report_lines.append("")
+
+                # 메트릭별 상세 분석
+                report_lines.append("**메트릭 분석**:")
+                report_lines.append("")
+
+                problems = []
+
+                # UDP Echo RTT
+                if 'udp_echo_rtt_ms' in row.index and 'udp_echo_rtt_ms' in normal_means:
+                    value = row['udp_echo_rtt_ms']
+                    normal = normal_means['udp_echo_rtt_ms']
+                    std = normal_stds['udp_echo_rtt_ms']
+                    diff_pct = ((value - normal) / normal * 100) if normal > 0 else 0
+                    sigma = ((value - normal) / std) if std > 0 else 0
+
+                    status = "🔴" if abs(diff_pct) > 50 or abs(sigma) > 3 else "🟡" if abs(diff_pct) > 20 or abs(sigma) > 2 else "🟢"
+                    report_lines.append(f"- {status} **UDP Echo RTT**: {value:.2f} ms")
+                    report_lines.append(f"  - 정상 평균: {normal:.2f} ms")
+                    report_lines.append(f"  - 차이: {diff_pct:+.1f}% ({sigma:+.2f}σ)")
+
+                    if abs(diff_pct) > 50:
+                        problems.append(f"UDP Echo RTT가 정상 대비 {abs(diff_pct):.0f}% {'증가' if diff_pct > 0 else '감소'}")
+                    elif abs(diff_pct) > 20:
+                        problems.append(f"UDP Echo RTT가 약간 {'높음' if diff_pct > 0 else '낮음'}")
+                    report_lines.append("")
+
+                # eCPRI Delay
+                if 'ecpri_delay_us' in row.index and 'ecpri_delay_us' in normal_means:
+                    value = row['ecpri_delay_us']
+                    normal = normal_means['ecpri_delay_us']
+                    std = normal_stds['ecpri_delay_us']
+                    diff_pct = ((value - normal) / normal * 100) if normal > 0 else 0
+                    sigma = ((value - normal) / std) if std > 0 else 0
+
+                    status = "🔴" if abs(diff_pct) > 50 or abs(sigma) > 3 else "🟡" if abs(diff_pct) > 20 or abs(sigma) > 2 else "🟢"
+                    report_lines.append(f"- {status} **eCPRI Delay**: {value:.2f} μs")
+                    report_lines.append(f"  - 정상 평균: {normal:.2f} μs")
+                    report_lines.append(f"  - 차이: {diff_pct:+.1f}% ({sigma:+.2f}σ)")
+
+                    if abs(diff_pct) > 50:
+                        problems.append(f"eCPRI 지연이 정상 대비 {abs(diff_pct):.0f}% {'증가' if diff_pct > 0 else '감소'}")
+                    elif abs(diff_pct) > 20:
+                        problems.append(f"eCPRI 지연이 약간 {'높음' if diff_pct > 0 else '낮음'}")
+                    report_lines.append("")
+
+                # LBM RTT
+                if 'lbm_rtt_ms' in row.index and 'lbm_rtt_ms' in normal_means:
+                    value = row['lbm_rtt_ms']
+                    normal = normal_means['lbm_rtt_ms']
+                    std = normal_stds['lbm_rtt_ms']
+                    diff_pct = ((value - normal) / normal * 100) if normal > 0 else 0
+                    sigma = ((value - normal) / std) if std > 0 else 0
+
+                    status = "🔴" if abs(diff_pct) > 50 or abs(sigma) > 3 else "🟡" if abs(diff_pct) > 20 or abs(sigma) > 2 else "🟢"
+                    report_lines.append(f"- {status} **LBM RTT**: {value:.2f} ms")
+                    report_lines.append(f"  - 정상 평균: {normal:.2f} ms")
+                    report_lines.append(f"  - 차이: {diff_pct:+.1f}% ({sigma:+.2f}σ)")
+
+                    if abs(diff_pct) > 50:
+                        problems.append(f"LBM RTT가 정상 대비 {abs(diff_pct):.0f}% {'증가' if diff_pct > 0 else '감소'}")
+                    elif abs(diff_pct) > 20:
+                        problems.append(f"LBM RTT가 약간 {'높음' if diff_pct > 0 else '낮음'}")
+                    report_lines.append("")
+
+                # CCM Miss Count
+                if 'ccm_miss_count' in row.index and 'ccm_miss_count' in normal_means:
+                    value = int(row['ccm_miss_count'])
+                    normal = normal_means['ccm_miss_count']
+
+                    status = "🔴" if value > 5 else "🟡" if value > 0 else "🟢"
+                    report_lines.append(f"- {status} **CCM Miss Count**: {value}회")
+                    report_lines.append(f"  - 정상 평균: {normal:.1f}회")
+
+                    if value > 5:
+                        problems.append(f"패킷 손실이 심각함 ({value}회)")
+                    elif value > 0:
+                        problems.append(f"패킷 손실 발생 ({value}회)")
+                    report_lines.append("")
+
+                # 종합 판단
+                if problems:
+                    report_lines.append("**💡 종합 판단**:")
+                    report_lines.append("")
+                    for problem in problems:
+                        report_lines.append(f"- {problem}")
+                else:
+                    report_lines.append("**💡 종합 판단**: 모든 메트릭이 정상 범위이지만, 다변량 패턴 분석에서 이상으로 탐지되었습니다.")
+
+                report_lines.append("")
+                report_lines.append("---")
+                report_lines.append("")
+        else:
+            report_lines.append("이상 데이터가 없습니다.")
+            report_lines.append("")
+            report_lines.append("---")
+            report_lines.append("")
+
+        # 푸터
+        report_lines.append("## 📌 참고사항")
+        report_lines.append("")
+        report_lines.append("- **이상 점수 (Final Score)**: 0.0 (정상) ~ 1.0 (이상)")
+        report_lines.append("- **이상 기준**: Final Score > 0.5")
+        report_lines.append("- **Residual Detector**: 시계열 예측-잔차 기반 탐지")
+        report_lines.append("- **Multivariate Detector**: 다변량 이상 탐지 (Isolation Forest)")
         report_lines.append("")
 
-        for _, row in time_analysis.head(20).iterrows():
-            time_str = row['time_window'].strftime('%H:%M')
-            anomaly_count = int(row['predicted_label'])
-            avg_score = row['composite_score']
+        # 파일 저장
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(report_lines))
 
-            bar = "█" * max(1, int(anomaly_count / 2))
-            report_lines.append(f"`{time_str}` {bar} {anomaly_count}건 (평균 점수: {avg_score:.3f})")
-
-        report_lines.append("")
-        report_lines.append("---")
-        report_lines.append("")
-
-    # 8. 권장 사항
-    report_lines.append("## 💡 권장 사항")
-    report_lines.append("")
-
-    if 'label' in df.columns:
-        fn_rate = fn / (tp + fn) if (tp + fn) > 0 else 0
-        fp_rate = fp / (fp + tn) if (fp + tn) > 0 else 0
-
-        if fn_rate > 0.2:
-            report_lines.append("### ⚠️ 높은 False Negative율")
-            report_lines.append("")
-            report_lines.append(f"- 현재 **{fn_rate:.1%}**의 이상이 탐지되지 않고 있습니다.")
-            report_lines.append("- **권장 조치**:")
-            report_lines.append("  1. 탐지 임계값 낮추기 (`--threshold 0.3`)")
-            report_lines.append("  2. 룰 기반 임계값 조정 (`--rule-threshold 8.0`)")
-            report_lines.append("  3. 변화점 탐지기 추가 고려")
-            report_lines.append("")
-
-        if fp_rate > 0.05:
-            report_lines.append("### ⚠️ False Positive 주의")
-            report_lines.append("")
-            report_lines.append(f"- 현재 **{fp_rate:.1%}**의 오탐이 발생하고 있습니다.")
-            report_lines.append("- **권장 조치**:")
-            report_lines.append("  1. 탐지 임계값 높이기 (`--threshold 0.7`)")
-            report_lines.append("  2. 여러 탐지기의 합의 요구")
-            report_lines.append("")
-
-        if fn_rate <= 0.2 and fp_rate <= 0.05:
-            report_lines.append("### ✅ 양호한 탐지 성능")
-            report_lines.append("")
-            report_lines.append("현재 탐지 성능이 우수합니다:")
-            report_lines.append(f"- False Negative율: {fn_rate:.1%} (목표: ≤ 20%)")
-            report_lines.append(f"- False Positive율: {fp_rate:.1%} (목표: ≤ 5%)")
-            report_lines.append("")
-
-    report_lines.append("---")
-    report_lines.append("")
-
-    # 푸터
-    report_lines.append("## 📝 부록")
-    report_lines.append("")
-    report_lines.append("### 파일 정보")
-    report_lines.append("")
-    report_lines.append(f"- **보고서 파일**: {output_file}")
-    report_lines.append(f"- **데이터 파일**: {input_file}")
-    report_lines.append(f"- **생성 시각**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    report_lines.append("")
-
-    # 파일 저장
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    output_file.write_text("\n".join(report_lines), encoding='utf-8')
-
-    print(f"✅ 보고서 생성 완료: {output_file}")
-    print(f"   파일 크기: {output_file.stat().st_size / 1024:.2f} KB")
+        print(f"\n✅ 리포트 생성 완료: {output_path}")
+        return output_path
 
 
 def main():
-    parser = argparse.ArgumentParser(description="추론 결과 상세 보고서 생성")
+    """메인 함수."""
+    parser = argparse.ArgumentParser(
+        description="추론 결과 리포트 생성",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
     parser.add_argument(
-        "--input",
+        "--inference-result",
         type=Path,
-        default=Path("data/inference_results.csv"),
-        help="추론 결과 CSV 파일 (기본값: data/inference_results.csv)"
+        required=True,
+        help="추론 결과 CSV 파일 (inference_simple.py 출력)",
+    )
+    parser.add_argument(
+        "--original-data",
+        type=Path,
+        required=True,
+        help="원본 데이터 CSV 파일",
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=None,
-        help="보고서 출력 파일 (기본값: reports/inference_report_YYYYMMDD_HHMMSS.md)"
+        help="출력 리포트 경로 (기본: 자동 생성)",
     )
 
     args = parser.parse_args()
 
-    # 기본 출력 파일명 생성
+    # 출력 경로 자동 생성
     if args.output is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         args.output = Path(f"reports/inference_report_{timestamp}.md")
 
-    print("="*70)
-    print("OCAD 추론 결과 보고서 생성")
-    print("="*70)
-    print(f"입력: {args.input}")
-    print(f"출력: {args.output}")
-    print("")
+    print("=" * 70)
+    print("📊 OCAD 추론 결과 리포트 생성기")
+    print("=" * 70)
+    print(f"\n추론 결과: {args.inference_result}")
+    print(f"원본 데이터: {args.original_data}")
+    print(f"출력 경로: {args.output}")
 
-    if not args.input.exists():
-        print(f"❌ 입력 파일을 찾을 수 없습니다: {args.input}")
-        return 1
+    # 리포트 생성
+    generator = InferenceReportGenerator(args.inference_result, args.original_data)
+    output_path = generator.generate_markdown_report(args.output)
 
-    generate_report(args.input, args.output)
-
-    print("")
-    print("보고서 확인:")
-    print(f"  cat {args.output}")
-    print(f"  code {args.output}")
-    print("="*70)
-
-    return 0
+    print("\n" + "=" * 70)
+    print("✅ 리포트 생성 완료!")
+    print("=" * 70)
+    print(f"\n리포트를 확인하세요: {output_path.absolute()}")
+    print(f"\n명령어: cat {output_path}")
 
 
 if __name__ == "__main__":
-    exit(main())
+    main()

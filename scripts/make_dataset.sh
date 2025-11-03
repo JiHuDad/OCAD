@@ -178,7 +178,7 @@ if [[ "$FORMATS" == *"parquet"* ]]; then
                 --input "$OUTPUT_DIR/01_training_normal.csv" \
                 --output-dir "$PROCESSED_DIR" \
                 --metric-type "$metric" \
-                --window-size 10
+                --sequence-length 10
 
             if [ $? -ne 0 ]; then
                 echo "❌ $metric Parquet 변환 실패"

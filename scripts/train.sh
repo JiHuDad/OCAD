@@ -167,7 +167,7 @@ for metric in udp_echo ecpri lbm; do
         --input "$TRAIN_DATA" \
         --output-dir "$PROCESSED_DIR" \
         --metric-type "$metric" \
-        --window-size 10
+        --sequence-length 10
 
     if [ $? -ne 0 ]; then
         echo "❌ $metric 데이터 준비 실패"

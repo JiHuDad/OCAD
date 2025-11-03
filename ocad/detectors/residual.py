@@ -201,18 +201,29 @@ class ResidualDetector(BaseDetector):
             if self.models[metric_type] is not None:
                 sequence = self.history[metric_type][-self.sequence_length-1:-1]
                 prediction = self._predict(metric_type, sequence)
-                
+
                 if prediction is not None:
                     residual = abs(value - prediction)
-                    
-                    # Normalize residual by recent standard deviation
-                    recent_values = self.history[metric_type][-20:]
-                    if len(recent_values) > 3:
-                        std_dev = np.std(recent_values)
+
+                    # Normalize residual
+                    # 사전 학습 모델 사용 시: 학습 데이터의 std로 정규화
+                    # 온라인 학습 시: 최근 데이터의 std로 정규화
+                    if hasattr(self, 'residual_normalizers') and metric_type in self.residual_normalizers:
+                        # 사전 학습 모델 사용 중
+                        std_dev = self.residual_normalizers[metric_type]
                         if std_dev > 0:
                             normalized_residual = residual / std_dev
                             return normalized_residual
-                    
+                    else:
+                        # 온라인 학습 중 - 최근 데이터의 std 사용
+                        recent_values = self.history[metric_type][-20:]
+                        if len(recent_values) > 3:
+                            std_dev = np.std(recent_values)
+                            if std_dev > 0:
+                                normalized_residual = residual / std_dev
+                                return normalized_residual
+
+                    # Fallback: 정규화 불가능한 경우 원본 residual 반환
                     return residual
             
         except Exception as e:
@@ -366,10 +377,19 @@ class ResidualDetector(BaseDetector):
                 # Load scaler if exists
                 if scaler_path.exists():
                     self.scalers[metric_type] = joblib.load(scaler_path)
+
+                    # 학습 데이터의 std를 residual 정규화용으로 저장
+                    # (원본 스케일에서의 std)
+                    train_std = np.sqrt(self.scalers[metric_type].var_[0])
+                    if not hasattr(self, 'residual_normalizers'):
+                        self.residual_normalizers = {}
+                    self.residual_normalizers[metric_type] = train_std
+
                     self.logger.info(
                         f"Loaded scaler for {metric_type}",
                         mean=float(self.scalers[metric_type].mean_[0]),
-                        std=float(self.scalers[metric_type].var_[0] ** 0.5)
+                        std=float(train_std),
+                        residual_normalizer=float(train_std)
                     )
                 else:
                     self.logger.warning(

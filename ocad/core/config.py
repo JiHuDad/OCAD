@@ -86,7 +86,7 @@ class DetectionConfig(BaseModel):
     rule_p99_threshold_ms: float = 100.0 # 룰 기반 p99 지연 임계값 (ms)
     rule_runlength_threshold: int = 3    # 룰 기반 연속 실패 임계값 (회)
     cusum_threshold: float = 5.0         # CUSUM 변화점 임계값
-    residual_threshold: float = 3.0      # 잔차 이상 임계값
+    residual_threshold: float = 6.5      # 잔차 이상 임계값 (정규화된 std 배수)
     
     # 알람 제어
     hold_down_seconds: int = 120      # Hold-down 시간 (초)

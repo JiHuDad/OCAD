@@ -8,6 +8,7 @@ ORAN 환경에서 축소된 CFM 기능을 활용한 하이브리드 이상탐지
 - **하이브리드 탐지**: 룰 + 변화점(CUSUM/PELT) + 예측-잔차(TCN/LSTM) + 다변량(옵션)
 - **조기 경보**: 끊기기 전 징조를 4분 이상 앞서 탐지 (목표)
 - **최소 신호**: UDP-echo, eCPRI delay, LBM만으로도 효과적 탐지
+- **🆕 플러그인 아키텍처**: BFD, BGP, PTP 등 다양한 프로토콜 확장 가능 ([계획서](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md))
 
 ## 시스템 구조
 

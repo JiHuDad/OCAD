@@ -239,3 +239,93 @@ class KPIMetrics(BaseModel):
         if p + r == 0:
             return 0.0
         return 2 * p * r / (p + r)
+
+
+class MetricDetectionDetail(BaseModel):
+    """개별 메트릭에 대한 상세 탐지 정보.
+
+    Detector가 각 메트릭을 어떻게 평가했는지에 대한 상세 정보를 담습니다.
+    """
+
+    metric_name: str = Field(..., description="메트릭 이름 (예: udp_echo, ecpri, lbm)")
+    actual_value: Optional[float] = Field(None, description="실제 측정값")
+    predicted_value: Optional[float] = Field(None, description="예측값 (Residual Detector)")
+    error: Optional[float] = Field(None, description="예측 오차 (actual - predicted)")
+    normalized_error: Optional[float] = Field(None, description="정규화된 오차 (σ 단위)")
+    threshold_value: Optional[float] = Field(None, description="임계값 (Rule-based Detector)")
+    score: float = Field(..., description="이 메트릭에 대한 이상 점수 (0.0~1.0)")
+    is_anomalous: bool = Field(..., description="이 메트릭이 이상으로 판단되었는지")
+    explanation: Optional[str] = Field(None, description="사람이 읽을 수 있는 설명")
+
+
+class DetectionResult(BaseModel):
+    """이상 탐지 결과의 상세 정보.
+
+    단순한 점수(float) 대신, 탐지 과정의 모든 정보를 담는 구조화된 결과입니다.
+    왜 이상으로 판단되었는지 추적 가능하도록 상세 정보를 제공합니다.
+    """
+
+    score: float = Field(..., description="최종 이상 점수 (0.0=정상, 1.0=이상)", ge=0.0, le=1.0)
+    is_anomaly: bool = Field(..., description="임계값 기준 이상 여부")
+    detector_name: str = Field(..., description="탐지기 이름")
+
+    # 메트릭별 상세 정보
+    metric_details: Dict[str, MetricDetectionDetail] = Field(
+        default_factory=dict,
+        description="각 메트릭별 탐지 상세 정보"
+    )
+
+    # 추가 컨텍스트
+    dominant_metric: Optional[str] = Field(None, description="가장 높은 점수를 기록한 메트릭")
+    anomaly_type: Optional[str] = Field(None, description="이상 유형 (예: spike, drift, pattern_change)")
+    confidence: Optional[float] = Field(None, description="탐지 신뢰도 (0.0~1.0)")
+    explanation: Optional[str] = Field(None, description="전체 탐지 결과에 대한 설명")
+
+    # 메타데이터
+    timestamp: Optional[datetime] = Field(None, description="탐지 시점")
+    processing_time_ms: Optional[float] = Field(None, description="처리 시간 (밀리초)")
+
+    def get_metric_explanation(self, metric_name: str) -> str:
+        """특정 메트릭에 대한 설명 반환.
+
+        Args:
+            metric_name: 메트릭 이름
+
+        Returns:
+            설명 문자열
+        """
+        if metric_name not in self.metric_details:
+            return f"메트릭 '{metric_name}'에 대한 정보 없음"
+
+        detail = self.metric_details[metric_name]
+        if detail.explanation:
+            return detail.explanation
+
+        # 기본 설명 생성
+        if detail.predicted_value is not None and detail.actual_value is not None:
+            return (
+                f"{metric_name}: 예측={detail.predicted_value:.2f}, "
+                f"실제={detail.actual_value:.2f}, "
+                f"오차={detail.error:.2f}"
+            )
+        elif detail.threshold_value is not None and detail.actual_value is not None:
+            return (
+                f"{metric_name}: 값={detail.actual_value:.2f}, "
+                f"임계값={detail.threshold_value:.2f}"
+            )
+        else:
+            return f"{metric_name}: 점수={detail.score:.3f}"
+
+    def to_simple_dict(self) -> Dict[str, Any]:
+        """레거시 호환을 위한 단순 딕셔너리 변환.
+
+        기존 코드와의 호환성을 위해 score만 반환하는 형식으로 변환합니다.
+
+        Returns:
+            점수 정보만 담은 딕셔너리
+        """
+        return {
+            "score": self.score,
+            "is_anomaly": self.is_anomaly,
+            "detector_name": self.detector_name,
+        }

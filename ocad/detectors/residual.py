@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from sklearn.preprocessing import StandardScaler
 
-from ..core.models import Capabilities, FeatureVector
+from ..core.models import Capabilities, FeatureVector, DetectionResult, MetricDetectionDetail
 from .base import BaseDetector
 
 
@@ -167,9 +167,134 @@ class ResidualDetector(BaseDetector):
                 max_residual=max_residual,
                 residuals=residuals,
             )
-        
+
         return score
-    
+
+    def detect_detailed(self, features: FeatureVector, capabilities: Capabilities) -> DetectionResult:
+        """Detect anomalies with detailed information.
+
+        Args:
+            features: Feature vector to analyze
+            capabilities: Endpoint capabilities
+
+        Returns:
+            DetectionResult with prediction details
+        """
+        from datetime import datetime
+        start_time = time.time()
+
+        metric_details = {}
+        residuals = []
+
+        # UDP Echo
+        if capabilities.udp_echo and features.udp_echo_p95 is not None:
+            detail = self._calculate_residual_detailed(
+                "udp_echo",
+                features.udp_echo_p95,
+                features.endpoint_id
+            )
+            if detail:
+                metric_details["udp_echo"] = detail
+                residuals.append(detail.normalized_error if detail.normalized_error else 0)
+
+        # eCPRI Delay
+        if capabilities.ecpri_delay and features.ecpri_p95 is not None:
+            ecpri_ms = features.ecpri_p95 / 1000.0
+            detail = self._calculate_residual_detailed(
+                "ecpri",
+                ecpri_ms,
+                features.endpoint_id
+            )
+            if detail:
+                metric_details["ecpri"] = detail
+                residuals.append(detail.normalized_error if detail.normalized_error else 0)
+
+        # LBM RTT
+        if capabilities.lbm and features.lbm_rtt_p95 is not None:
+            detail = self._calculate_residual_detailed(
+                "lbm",
+                features.lbm_rtt_p95,
+                features.endpoint_id
+            )
+            if detail:
+                metric_details["lbm"] = detail
+                residuals.append(detail.normalized_error if detail.normalized_error else 0)
+
+        # Calculate final score
+        if not residuals:
+            score = 0.0
+            dominant_metric = None
+        else:
+            max_residual = max(residuals)
+            score = min(1.0, max_residual / self.config.residual_threshold)
+
+            # Find dominant metric
+            dominant_metric = None
+            max_detail_score = 0
+            for metric_name, detail in metric_details.items():
+                if detail.score > max_detail_score:
+                    max_detail_score = detail.score
+                    dominant_metric = metric_name
+
+        processing_time = (time.time() - start_time) * 1000
+
+        return DetectionResult(
+            score=score,
+            is_anomaly=score > 0.5,
+            detector_name="ResidualDetector",
+            metric_details=metric_details,
+            dominant_metric=dominant_metric,
+            anomaly_type="prediction_residual" if score > 0.5 else None,
+            confidence=min(1.0, score * 1.2) if score > 0 else None,
+            explanation=self._generate_explanation(metric_details, score),
+            timestamp=datetime.now(),
+            processing_time_ms=processing_time,
+        )
+
+    def _generate_explanation(self, metric_details: Dict[str, MetricDetectionDetail], score: float) -> str:
+        """Generate human-readable explanation.
+
+        Args:
+            metric_details: Metric detection details
+            score: Final score
+
+        Returns:
+            Explanation string
+        """
+        if score < 0.3:
+            return "모든 메트릭이 예측 범위 내에 있습니다."
+
+        anomalous_metrics = [
+            name for name, detail in metric_details.items()
+            if detail.is_anomalous
+        ]
+
+        if not anomalous_metrics:
+            return f"예측 오차가 약간 높지만 (점수: {score:.2f}), 임계값 이하입니다."
+
+        metric_names_kr = {
+            "udp_echo": "UDP Echo RTT",
+            "ecpri": "eCPRI Delay",
+            "lbm": "LBM RTT"
+        }
+
+        parts = []
+        for metric_name in anomalous_metrics:
+            detail = metric_details[metric_name]
+            kr_name = metric_names_kr.get(metric_name, metric_name)
+
+            if detail.predicted_value and detail.actual_value and detail.error:
+                error_pct = abs(detail.error / detail.predicted_value * 100) if detail.predicted_value > 0 else 0
+                parts.append(
+                    f"{kr_name}: 예측값 {detail.predicted_value:.2f}에 비해 "
+                    f"실제값 {detail.actual_value:.2f}이(가) {error_pct:.0f}% 차이남"
+                )
+
+        if parts:
+            return "TCN 모델 예측 실패: " + ", ".join(parts)
+        else:
+            return f"{len(anomalous_metrics)}개 메트릭에서 예측 오차 발생"
+
     def _calculate_residual(self, metric_type: str, value: float, endpoint_id: str) -> Optional[float]:
         """Calculate prediction residual for a metric.
         
@@ -235,7 +360,96 @@ class ResidualDetector(BaseDetector):
             )
         
         return None
-    
+
+    def _calculate_residual_detailed(
+        self, metric_type: str, value: float, endpoint_id: str
+    ) -> Optional[MetricDetectionDetail]:
+        """Calculate prediction residual with detailed information.
+
+        Args:
+            metric_type: Type of metric (udp_echo, ecpri, lbm)
+            value: Current metric value
+            endpoint_id: Endpoint identifier
+
+        Returns:
+            MetricDetectionDetail with prediction information or None
+        """
+        # Add to history
+        self.history[metric_type].append(value)
+
+        # Keep only recent history
+        if len(self.history[metric_type]) > 1000:
+            self.history[metric_type] = self.history[metric_type][-500:]
+
+        # Need enough data for prediction
+        if len(self.history[metric_type]) < self.sequence_length + 1:
+            return None
+
+        try:
+            # Train model if needed
+            if self.models[metric_type] is None and len(self.history[metric_type]) >= self.min_training_samples:
+                self._train_model(metric_type)
+
+            # Make prediction if model is available
+            if self.models[metric_type] is not None:
+                sequence = self.history[metric_type][-self.sequence_length-1:-1]
+                prediction = self._predict(metric_type, sequence)
+
+                if prediction is not None:
+                    residual = abs(value - prediction)
+                    error = value - prediction  # Signed error
+
+                    # Normalize residual
+                    normalized_residual = None
+                    if hasattr(self, 'residual_normalizers') and metric_type in self.residual_normalizers:
+                        std_dev = self.residual_normalizers[metric_type]
+                        if std_dev > 0:
+                            normalized_residual = residual / std_dev
+                    else:
+                        recent_values = self.history[metric_type][-20:]
+                        if len(recent_values) > 3:
+                            std_dev = np.std(recent_values)
+                            if std_dev > 0:
+                                normalized_residual = residual / std_dev
+
+                    if normalized_residual is None:
+                        normalized_residual = residual
+
+                    # Calculate score
+                    score = min(1.0, normalized_residual / self.config.residual_threshold)
+                    is_anomalous = score > 0.5
+
+                    # Generate explanation
+                    if is_anomalous:
+                        error_pct = abs(error / prediction * 100) if prediction > 0 else 0
+                        explanation = (
+                            f"예측값 {prediction:.2f}에 비해 실제값 {value:.2f}이(가) "
+                            f"{error_pct:.0f}% 차이 (오차: {error:+.2f}, {normalized_residual:.1f}σ)"
+                        )
+                    else:
+                        explanation = f"예측 범위 내 (오차: {error:+.2f})"
+
+                    return MetricDetectionDetail(
+                        metric_name=metric_type,
+                        actual_value=value,
+                        predicted_value=prediction,
+                        error=error,
+                        normalized_error=normalized_residual,
+                        score=score,
+                        is_anomalous=is_anomalous,
+                        explanation=explanation,
+                    )
+
+        except Exception as e:
+            self.logger.debug(
+                "Detailed residual calculation failed",
+                metric_type=metric_type,
+                endpoint_id=endpoint_id,
+                error=str(e),
+            )
+
+        return None
+
     def _train_model(self, metric_type: str) -> None:
         """Train prediction model for a metric type.
         

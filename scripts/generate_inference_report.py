@@ -134,6 +134,58 @@ class InferenceReportGenerator:
 
         return analysis
 
+    def _create_metric_chart(self, value: float, normal: float, range_min: float, range_max: float) -> str:
+        """메트릭 값을 시각적으로 표현하는 간단한 차트 생성.
+
+        Args:
+            value: 현재 값
+            normal: 정상 평균값
+            range_min: 정상 범위 최소값
+            range_max: 정상 범위 최대값
+
+        Returns:
+            str: ASCII 차트 문자열
+        """
+        # 차트 길이 (총 50칸)
+        chart_width = 50
+
+        # 범위 확장 (여유 20%)
+        margin = (range_max - range_min) * 0.2
+        chart_min = max(0, range_min - margin)
+        chart_max = range_max + margin
+
+        # 위치 계산
+        def calc_pos(val):
+            if chart_max == chart_min:
+                return chart_width // 2
+            pos = int((val - chart_min) / (chart_max - chart_min) * chart_width)
+            return max(0, min(chart_width - 1, pos))
+
+        normal_pos = calc_pos(normal)
+        value_pos = calc_pos(value)
+        range_start = calc_pos(range_min)
+        range_end = calc_pos(range_max)
+
+        # 차트 생성
+        chart = ['·'] * chart_width
+
+        # 정상 범위 표시 (━)
+        for i in range(range_start, range_end + 1):
+            chart[i] = '━'
+
+        # 정상 평균 위치 (│)
+        chart[normal_pos] = '│'
+
+        # 현재 값 위치
+        if value < range_min:
+            chart[value_pos] = '▼'  # 정상 범위 아래
+        elif value > range_max:
+            chart[value_pos] = '▲'  # 정상 범위 위
+        else:
+            chart[value_pos] = '●'  # 정상 범위 내
+
+        return ''.join(chart)
+
     def analyze_multivariate_patterns(self) -> dict:
         """다변량 패턴 분석 (개별 메트릭이 정상이지만 조합이 이상인 경우)."""
         anomaly_df = self.merged_df[self.merged_df['is_anomaly'] == 1]
@@ -394,20 +446,27 @@ class InferenceReportGenerator:
         report_lines.append("## 📋 이상 데이터 샘플 (상위 10개)")
         report_lines.append("")
 
-        anomaly_samples = self.merged_df[self.merged_df['is_anomaly'] == 1].head(10)
+        # 최종 점수 기준으로 정렬하여 상위 10개 추출
+        anomaly_samples = self.merged_df[self.merged_df['is_anomaly'] == 1].nlargest(10, 'final_score')
 
         if len(anomaly_samples) > 0:
             # 정상 데이터 기준값 계산
             normal_df = self.merged_df[self.merged_df['is_anomaly'] == 0]
             normal_means = {}
             normal_stds = {}
+            normal_ranges = {}  # 정상 범위 (mean ± 2*std)
 
             for metric in ['udp_echo_rtt_ms', 'ecpri_delay_us', 'lbm_rtt_ms', 'ccm_miss_count']:
                 if metric in normal_df.columns:
                     normal_means[metric] = normal_df[metric].mean()
                     normal_stds[metric] = normal_df[metric].std()
+                    # 정상 범위: mean ± 2*std (약 95% 신뢰구간)
+                    normal_ranges[metric] = {
+                        'min': normal_means[metric] - 2 * normal_stds[metric],
+                        'max': normal_means[metric] + 2 * normal_stds[metric],
+                    }
 
-            report_lines.append("각 샘플이 왜 이상으로 판단되었는지 상세히 설명합니다:")
+            report_lines.append("각 샘플이 **왜 이상으로 판단되었는지** 구체적으로 설명합니다:")
             report_lines.append("")
 
             for idx, (_, row) in enumerate(anomaly_samples.iterrows(), 1):
@@ -417,29 +476,66 @@ class InferenceReportGenerator:
                 report_lines.append(f"**최종 이상 점수**: {row['final_score']:.4f}")
                 report_lines.append("")
 
+                # 탐지기별 점수 분석
+                residual_score = row['residual_score'] if 'residual_score' in row.index else 0
+                multivariate_score = row['multivariate_score'] if 'multivariate_score' in row.index else 0
+
+                report_lines.append("**탐지기 분석**:")
+                report_lines.append("")
+                report_lines.append(f"- **Residual Score (TCN)**: {residual_score:.4f} {'🔴' if residual_score > 0.7 else '🟡' if residual_score > 0.3 else '🟢'}")
+                report_lines.append(f"- **Multivariate Score (Isolation Forest)**: {multivariate_score:.4f} {'🔴' if multivariate_score > 0.7 else '🟡' if multivariate_score > 0.3 else '🟢'}")
+                report_lines.append("")
+
+                # 주도 탐지기 파악
+                if residual_score > multivariate_score and residual_score > 0.3:
+                    report_lines.append("**🎯 주도 탐지기**: TCN (Residual Detector)")
+                    report_lines.append("→ 시계열 패턴이 학습 데이터와 다릅니다.")
+                elif multivariate_score > residual_score and multivariate_score > 0.3:
+                    report_lines.append("**🎯 주도 탐지기**: Isolation Forest (Multivariate Detector)")
+                    report_lines.append("→ 메트릭 간 조합 패턴이 비정상입니다.")
+                else:
+                    report_lines.append("**🎯 주도 탐지기**: 복합 탐지 (여러 탐지기가 함께 탐지)")
+                report_lines.append("")
+
                 # 메트릭별 상세 분석
                 report_lines.append("**메트릭 분석**:")
                 report_lines.append("")
 
                 problems = []
+                metric_details = []
 
                 # UDP Echo RTT
                 if 'udp_echo_rtt_ms' in row.index and 'udp_echo_rtt_ms' in normal_means:
                     value = row['udp_echo_rtt_ms']
                     normal = normal_means['udp_echo_rtt_ms']
                     std = normal_stds['udp_echo_rtt_ms']
+                    range_min = normal_ranges['udp_echo_rtt_ms']['min']
+                    range_max = normal_ranges['udp_echo_rtt_ms']['max']
+
                     diff_pct = ((value - normal) / normal * 100) if normal > 0 else 0
                     sigma = ((value - normal) / std) if std > 0 else 0
 
+                    # 정상 범위 벗어남 판단
+                    out_of_range = value < range_min or value > range_max
+
                     status = "🔴" if abs(diff_pct) > 50 or abs(sigma) > 3 else "🟡" if abs(diff_pct) > 20 or abs(sigma) > 2 else "🟢"
                     report_lines.append(f"- {status} **UDP Echo RTT**: {value:.2f} ms")
-                    report_lines.append(f"  - 정상 평균: {normal:.2f} ms")
+                    report_lines.append(f"  - 정상 평균: {normal:.2f} ms (범위: {max(0, range_min):.2f} ~ {range_max:.2f} ms)")
                     report_lines.append(f"  - 차이: {diff_pct:+.1f}% ({sigma:+.2f}σ)")
 
-                    if abs(diff_pct) > 50:
-                        problems.append(f"UDP Echo RTT가 정상 대비 {abs(diff_pct):.0f}% {'증가' if diff_pct > 0 else '감소'}")
+                    # 시각적 표현 (간단한 차트)
+                    chart = self._create_metric_chart(value, normal, range_min, range_max)
+                    report_lines.append(f"  - 시각화: {chart}")
+
+                    if out_of_range:
+                        if value > range_max:
+                            problems.append(f"UDP Echo RTT가 정상 범위를 크게 초과 ({value:.1f}ms > {range_max:.1f}ms)")
+                            metric_details.append("**네트워크 지연 증가**")
+                        else:
+                            problems.append(f"UDP Echo RTT가 비정상적으로 낮음 ({value:.1f}ms < {range_min:.1f}ms)")
+                            metric_details.append("**비정상적으로 낮은 RTT (캐싱/우회?)**")
                     elif abs(diff_pct) > 20:
-                        problems.append(f"UDP Echo RTT가 약간 {'높음' if diff_pct > 0 else '낮음'}")
+                        problems.append(f"UDP Echo RTT가 약간 {'높음' if diff_pct > 0 else '낮음'} (정상 대비 {abs(diff_pct):.0f}%)")
                     report_lines.append("")
 
                 # eCPRI Delay
@@ -447,18 +543,30 @@ class InferenceReportGenerator:
                     value = row['ecpri_delay_us']
                     normal = normal_means['ecpri_delay_us']
                     std = normal_stds['ecpri_delay_us']
+                    range_min = normal_ranges['ecpri_delay_us']['min']
+                    range_max = normal_ranges['ecpri_delay_us']['max']
+
                     diff_pct = ((value - normal) / normal * 100) if normal > 0 else 0
                     sigma = ((value - normal) / std) if std > 0 else 0
 
+                    out_of_range = value < range_min or value > range_max
+
                     status = "🔴" if abs(diff_pct) > 50 or abs(sigma) > 3 else "🟡" if abs(diff_pct) > 20 or abs(sigma) > 2 else "🟢"
                     report_lines.append(f"- {status} **eCPRI Delay**: {value:.2f} μs")
-                    report_lines.append(f"  - 정상 평균: {normal:.2f} μs")
+                    report_lines.append(f"  - 정상 평균: {normal:.2f} μs (범위: {max(0, range_min):.2f} ~ {range_max:.2f} μs)")
                     report_lines.append(f"  - 차이: {diff_pct:+.1f}% ({sigma:+.2f}σ)")
 
-                    if abs(diff_pct) > 50:
-                        problems.append(f"eCPRI 지연이 정상 대비 {abs(diff_pct):.0f}% {'증가' if diff_pct > 0 else '감소'}")
+                    chart = self._create_metric_chart(value, normal, range_min, range_max)
+                    report_lines.append(f"  - 시각화: {chart}")
+
+                    if out_of_range:
+                        if value > range_max:
+                            problems.append(f"eCPRI 지연이 정상 범위를 초과 ({value:.1f}μs > {range_max:.1f}μs)")
+                            metric_details.append("**프론트홀 지연 증가**")
+                        else:
+                            problems.append(f"eCPRI 지연이 비정상적으로 낮음 ({value:.1f}μs < {range_min:.1f}μs)")
                     elif abs(diff_pct) > 20:
-                        problems.append(f"eCPRI 지연이 약간 {'높음' if diff_pct > 0 else '낮음'}")
+                        problems.append(f"eCPRI 지연이 약간 {'높음' if diff_pct > 0 else '낮음'} (정상 대비 {abs(diff_pct):.0f}%)")
                     report_lines.append("")
 
                 # LBM RTT
@@ -466,18 +574,30 @@ class InferenceReportGenerator:
                     value = row['lbm_rtt_ms']
                     normal = normal_means['lbm_rtt_ms']
                     std = normal_stds['lbm_rtt_ms']
+                    range_min = normal_ranges['lbm_rtt_ms']['min']
+                    range_max = normal_ranges['lbm_rtt_ms']['max']
+
                     diff_pct = ((value - normal) / normal * 100) if normal > 0 else 0
                     sigma = ((value - normal) / std) if std > 0 else 0
 
+                    out_of_range = value < range_min or value > range_max
+
                     status = "🔴" if abs(diff_pct) > 50 or abs(sigma) > 3 else "🟡" if abs(diff_pct) > 20 or abs(sigma) > 2 else "🟢"
                     report_lines.append(f"- {status} **LBM RTT**: {value:.2f} ms")
-                    report_lines.append(f"  - 정상 평균: {normal:.2f} ms")
+                    report_lines.append(f"  - 정상 평균: {normal:.2f} ms (범위: {max(0, range_min):.2f} ~ {range_max:.2f} ms)")
                     report_lines.append(f"  - 차이: {diff_pct:+.1f}% ({sigma:+.2f}σ)")
 
-                    if abs(diff_pct) > 50:
-                        problems.append(f"LBM RTT가 정상 대비 {abs(diff_pct):.0f}% {'증가' if diff_pct > 0 else '감소'}")
+                    chart = self._create_metric_chart(value, normal, range_min, range_max)
+                    report_lines.append(f"  - 시각화: {chart}")
+
+                    if out_of_range:
+                        if value > range_max:
+                            problems.append(f"LBM RTT가 정상 범위를 초과 ({value:.1f}ms > {range_max:.1f}ms)")
+                            metric_details.append("**이더넷 링크 지연 증가**")
+                        else:
+                            problems.append(f"LBM RTT가 비정상적으로 낮음 ({value:.1f}ms < {range_min:.1f}ms)")
                     elif abs(diff_pct) > 20:
-                        problems.append(f"LBM RTT가 약간 {'높음' if diff_pct > 0 else '낮음'}")
+                        problems.append(f"LBM RTT가 약간 {'높음' if diff_pct > 0 else '낮음'} (정상 대비 {abs(diff_pct):.0f}%)")
                     report_lines.append("")
 
                 # CCM Miss Count
@@ -491,36 +611,57 @@ class InferenceReportGenerator:
 
                     if value > 5:
                         problems.append(f"패킷 손실이 심각함 ({value}회)")
+                        metric_details.append("**심각한 패킷 손실**")
                     elif value > 0:
                         problems.append(f"패킷 손실 발생 ({value}회)")
+                        metric_details.append("**간헐적 패킷 손실**")
                     report_lines.append("")
 
-                # 종합 판단
+                # 종합 판단 (개선된 버전)
+                report_lines.append("**💡 종합 판단 - 왜 이상으로 탐지되었나?**:")
+                report_lines.append("")
+
                 if problems:
-                    report_lines.append("**💡 종합 판단**:")
+                    report_lines.append("**메트릭 기반 이상 탐지**:")
                     report_lines.append("")
                     for problem in problems:
-                        report_lines.append(f"- {problem}")
+                        report_lines.append(f"  - {problem}")
+                    report_lines.append("")
+
+                    if metric_details:
+                        report_lines.append("**진단**:")
+                        for detail in metric_details:
+                            report_lines.append(f"  - {detail}")
+                        report_lines.append("")
+
+                # 탐지기별 구체적 설명
+                if residual_score > 0.5:
+                    report_lines.append("**TCN (Residual Detector) 탐지 이유**:")
+                    report_lines.append("")
+                    report_lines.append(f"  - TCN 모델이 학습한 시계열 패턴과 **현재 패턴이 {residual_score:.1%} 차이**")
+                    report_lines.append("  - 메트릭 간 상관관계가 학습 데이터와 다름")
+                    report_lines.append("  - 예: 정상 시 'UDP RTT ↑ → eCPRI Delay ↑'인데, 현재는 역관계 또는 무상관")
+                    report_lines.append("")
+
+                if multivariate_score > 0.3:
+                    report_lines.append("**Isolation Forest (Multivariate Detector) 탐지 이유**:")
+                    report_lines.append("")
+                    report_lines.append(f"  - 메트릭 조합 패턴이 학습 데이터에서 **{multivariate_score:.1%} isolated (드문 패턴)**")
+                    report_lines.append("  - 개별 메트릭은 정상이어도, 조합이 비정상")
+                    report_lines.append("  - 예: UDP RTT=5ms, eCPRI=150μs 각각은 정상이지만, 이 조합은 학습 데이터에 없음")
+                    report_lines.append("")
+
+                # 결론
+                if not problems and (residual_score < 0.3 and multivariate_score < 0.3):
+                    report_lines.append("**⚠️ 경미한 이상**: 메트릭 값은 정상 범위이지만, 미묘한 패턴 변화가 감지됨")
+                    report_lines.append("")
+                elif residual_score > 0.7 or multivariate_score > 0.7:
+                    report_lines.append("**🚨 심각한 이상**: 즉시 조치가 필요합니다!")
+                    report_lines.append("")
                 else:
-                    # 개별 메트릭은 정상인데 이상으로 탐지된 경우
-                    residual_score = row['residual_score'] if 'residual_score' in row.index else 0
-                    multivariate_score = row['multivariate_score'] if 'multivariate_score' in row.index else 0
+                    report_lines.append("**⚠️ 중간 수준 이상**: 모니터링 강화 권장")
+                    report_lines.append("")
 
-                    if residual_score > 0.5 and multivariate_score < 0.3:
-                        report_lines.append("**💡 종합 판단**: 개별 메트릭 값은 정상 범위이지만, **시계열 예측 모델(TCN)이 예상하지 못한 패턴**을 보이고 있습니다.")
-                        report_lines.append("")
-                        report_lines.append("- **Residual Score 높음**: TCN 모델은 정상 데이터에서 메트릭 간 관계를 학습했는데, 현재 데이터는 그 관계를 벗어났습니다.")
-                        report_lines.append("- **예시**: 정상 시 \"UDP RTT ↑ → eCPRI Delay ↑\"인데, 현재는 \"UDP RTT ↑ → eCPRI Delay ↓\" (역의 관계)")
-                        report_lines.append("- **의미**: 메트릭 간 상관관계가 변했거나, 네트워크 경로/장비 동작 모드가 바뀌었을 가능성")
-                    elif multivariate_score > 0.3:
-                        report_lines.append("**💡 종합 판단**: 모든 메트릭이 정상 범위이지만, **메트릭 간 조합 패턴(다변량)이 비정상**으로 탐지되었습니다.")
-                        report_lines.append("")
-                        report_lines.append("- **Isolation Forest 탐지**: 학습 데이터에서 보지 못한 메트릭 조합 패턴")
-                        report_lines.append("- **의미**: 개별 임계값으로는 놓칠 수 있는 미묘한 이상 신호")
-                    else:
-                        report_lines.append("**💡 종합 판단**: 모든 메트릭이 정상 범위이지만, 패턴 분석에서 이상으로 탐지되었습니다.")
-
-                report_lines.append("")
                 report_lines.append("---")
                 report_lines.append("")
         else:

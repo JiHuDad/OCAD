@@ -1,0 +1,314 @@
+# OCAD Plugin Configuration
+# This file configures all protocol adapters and detectors
+
+# ============================================================================
+# Protocol Adapters
+# ============================================================================
+# Protocol adapters collect metrics from network protocols.
+# Each adapter can be enabled/disabled independently.
+
+protocol_adapters:
+  # CFM (Connectivity Fault Management) Protocol
+  # Monitors network connectivity using UDP Echo, eCPRI, LBM, and CCM
+  cfm:
+    enabled: true
+    config:
+      # UDP Echo settings
+      udp_echo:
+        enabled: true
+        port: 50000
+        packet_size_bytes: 64
+        timeout_ms: 1000
+
+      # eCPRI (enhanced Common Public Radio Interface) settings
+      ecpri:
+        enabled: true
+        port: 50001
+        message_type: "delay_measurement"
+
+      # LBM (Loopback Message) settings
+      lbm:
+        enabled: true
+        port: 50002
+        interval_sec: 10
+
+      # CCM (Continuity Check Message) settings
+      ccm:
+        enabled: true
+        interval_sec: 1
+
+      # Collection settings
+      interval_sec: 10  # How often to collect metrics
+      batch_size: 100   # Number of samples per batch
+
+  # BFD (Bidirectional Forwarding Detection) Protocol
+  # Monitors session state and detects network failures
+  bfd:
+    enabled: true
+    config:
+      # BFD session settings
+      sessions:
+        - id: "bfd-session-1"
+          local_ip: "192.168.1.1"
+          remote_ip: "192.168.1.2"
+          interval_ms: 50      # Detection interval (default: 50ms)
+          multiplier: 3        # Detection multiplier (default: 3)
+          min_echo_interval_ms: 50
+
+        # Add more sessions as needed
+        # - id: "bfd-session-2"
+        #   local_ip: "192.168.2.1"
+        #   remote_ip: "192.168.2.2"
+        #   interval_ms: 100
+        #   multiplier: 5
+
+      # Flapping detection settings
+      flapping_detection:
+        enabled: true
+        window_seconds: 60    # Time window to detect flapping
+        threshold_count: 5    # Number of state changes to trigger alert
+
+      # Collection settings
+      interval_sec: 1
+      batch_size: 50
+
+  # BGP (Border Gateway Protocol) Protocol [Phase 2]
+  # Monitors BGP routing updates and AS-path analysis
+  bgp:
+    enabled: false  # TODO: Enable after Phase 2 implementation
+    config:
+      # BGP session settings
+      sessions:
+        - id: "bgp-peer-1"
+          local_as: 65001
+          peer_ip: "192.168.10.1"
+          peer_as: 65002
+          router_id: "1.1.1.1"
+
+      # UPDATE message monitoring
+      update_monitoring:
+        enabled: true
+        track_prefixes: true
+        track_as_path: true
+        track_communities: true
+
+      # Hijacking detection
+      hijacking_detection:
+        enabled: true
+        known_prefixes_file: "config/bgp_known_prefixes.yaml"
+        as_path_validation: true
+
+      # Collection settings
+      interval_sec: 5
+      batch_size: 100
+
+  # PTP (Precision Time Protocol) Protocol [Phase 3]
+  # Monitors time synchronization accuracy and drift
+  ptp:
+    enabled: false  # TODO: Enable after Phase 3 implementation
+    config:
+      # PTP master/slave settings
+      domain: 0
+      announce_interval_log: 1  # 2^1 = 2 seconds
+      sync_interval_log: 0      # 2^0 = 1 second
+      delay_req_interval_log: 0
+
+      # Monitoring settings
+      offset_threshold_ns: 100      # Offset threshold in nanoseconds
+      drift_threshold_ppb: 50       # Drift threshold in parts per billion
+      path_delay_threshold_ns: 1000 # Path delay threshold
+
+      # Collection settings
+      interval_sec: 1
+      batch_size: 60
+
+# ============================================================================
+# Detectors (AI Models)
+# ============================================================================
+# Detectors analyze metrics and detect anomalies.
+# Each detector supports specific protocols.
+
+detectors:
+  # LSTM (Long Short-Term Memory) Detector
+  # Time series prediction for sequence-based anomaly detection
+  lstm:
+    enabled: true
+    protocols: ["bfd", "bgp", "cfm", "ptp"]
+    config:
+      # Model architecture
+      hidden_size: 64
+      num_layers: 2
+      dropout: 0.2
+      bidirectional: false
+
+      # Training settings
+      sequence_length: 50     # Number of timesteps to look back
+      learning_rate: 0.001
+      epochs: 50
+      batch_size: 32
+      validation_split: 0.2
+
+      # Inference settings
+      anomaly_threshold: 0.7  # Anomaly score threshold (0-1)
+      use_pretrained: true    # Load pre-trained models
+      model_dir: "ocad/models/lstm/"
+
+      # Protocol-specific settings
+      protocol_configs:
+        bfd:
+          sequence_length: 30
+          anomaly_threshold: 0.75
+        bgp:
+          sequence_length: 100
+          anomaly_threshold: 0.8
+        cfm:
+          sequence_length: 50
+          anomaly_threshold: 0.7
+        ptp:
+          sequence_length: 60
+          anomaly_threshold: 0.7
+
+  # HMM (Hidden Markov Model) Detector
+  # State transition analysis for state-based protocols
+  hmm:
+    enabled: true
+    protocols: ["bfd", "bgp"]
+    config:
+      # Model settings
+      n_states: 3              # Number of hidden states (normal, degraded, failed)
+      n_gaussians: 1           # Number of Gaussian components
+      covariance_type: "full"  # Covariance type: full, diag, spherical, tied
+
+      # Training settings
+      n_iter: 100              # Maximum EM iterations
+      convergence_threshold: 1e-4
+
+      # Inference settings
+      anomaly_threshold: 0.6   # Probability threshold for anomaly
+      min_state_duration: 3    # Minimum state duration (samples)
+      use_pretrained: true
+      model_dir: "ocad/models/hmm/"
+
+      # Protocol-specific settings
+      protocol_configs:
+        bfd:
+          n_states: 4  # Up, Down, AdminDown, Init
+          anomaly_threshold: 0.7
+        bgp:
+          n_states: 6  # Idle, Connect, Active, OpenSent, OpenConfirm, Established
+          anomaly_threshold: 0.65
+
+  # GNN (Graph Neural Network) Detector [Phase 2]
+  # Graph structure analysis for BGP AS-path and routing topology
+  gnn:
+    enabled: false  # TODO: Enable after Phase 2 implementation
+    protocols: ["bgp"]
+    config:
+      # Model architecture
+      graph_conv_type: "GCN"   # GCN, GAT, GraphSAGE
+      hidden_channels: 128
+      num_layers: 3
+      dropout: 0.3
+      aggregation: "mean"      # mean, max, add
+
+      # Training settings
+      learning_rate: 0.001
+      epochs: 100
+      batch_size: 16
+      validation_split: 0.2
+
+      # Graph construction
+      max_as_path_length: 10
+      edge_features: true      # Include edge features (AS relationships)
+      node_features: ["as_number", "prefix_count", "update_frequency"]
+
+      # Inference settings
+      anomaly_threshold: 0.75
+      use_pretrained: true
+      model_dir: "ocad/models/gnn/"
+
+  # TCN (Temporal Convolutional Network) Detector [Phase 3]
+  # Long-term temporal pattern detection for PTP and CFM
+  tcn:
+    enabled: false  # TODO: Enable after Phase 3 implementation
+    protocols: ["ptp", "cfm"]
+    config:
+      # Model architecture
+      num_channels: [64, 128, 256]  # Channel sizes per layer
+      kernel_size: 3
+      dropout: 0.2
+      dilation_base: 2
+
+      # Training settings
+      sequence_length: 100
+      learning_rate: 0.001
+      epochs: 50
+      batch_size: 32
+      validation_split: 0.2
+
+      # Inference settings
+      anomaly_threshold: 0.7
+      use_pretrained: true
+      model_dir: "ocad/models/tcn/"
+
+      # Protocol-specific settings
+      protocol_configs:
+        ptp:
+          sequence_length: 120  # 2 minutes at 1Hz
+          num_channels: [64, 128, 256, 512]
+          anomaly_threshold: 0.75
+        cfm:
+          sequence_length: 60   # 10 minutes at 10s interval
+          num_channels: [32, 64, 128]
+          anomaly_threshold: 0.7
+
+  # Autoencoder Detector (Optional)
+  # Unsupervised anomaly detection for all protocols
+  autoencoder:
+    enabled: false
+    protocols: ["cfm", "bfd", "bgp", "ptp"]
+    config:
+      # Model architecture
+      encoder_layers: [128, 64, 32]
+      decoder_layers: [32, 64, 128]
+      latent_dim: 16
+      activation: "relu"
+
+      # Training settings
+      learning_rate: 0.001
+      epochs: 100
+      batch_size: 64
+      validation_split: 0.2
+
+      # Inference settings
+      reconstruction_threshold: 2.0  # Reconstruction error threshold
+      use_pretrained: true
+      model_dir: "ocad/models/autoencoder/"
+
+# ============================================================================
+# Global Plugin Settings
+# ============================================================================
+
+global:
+  # Plugin discovery
+  plugin_dirs:
+    - "ocad/plugins"
+    # - "/opt/ocad/custom_plugins"  # Add custom plugin directories
+
+  # Logging
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_plugin_lifecycle: true  # Log plugin load/unload events
+
+  # Performance
+  max_concurrent_collections: 10  # Maximum concurrent protocol collections
+  collection_timeout_sec: 30      # Collection timeout per protocol
+  detector_timeout_sec: 5         # Detection timeout per detector
+
+  # Model management
+  model_auto_reload: true         # Auto-reload models when files change
+  model_cache_size: 100           # Number of models to cache in memory
+
+  # Error handling
+  continue_on_error: true         # Continue if a plugin fails
+  retry_attempts: 3               # Number of retry attempts on failure
+  retry_delay_sec: 1              # Delay between retries

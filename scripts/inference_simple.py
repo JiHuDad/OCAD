@@ -157,12 +157,34 @@ def run_inference(
             'endpoint_id': feature.endpoint_id,
         }
 
-        # 각 detector 실행
+        # 각 detector 실행 (상세 정보 포함)
         for name, detector in detectors.items():
             try:
-                score = detector.detect(feature, capabilities)
-                result[f'{name}_score'] = score
-                result[f'{name}_anomaly'] = 1 if score > 0.5 else 0
+                # detect_detailed() 사용하여 상세 정보 얻기
+                detection_result = detector.detect_detailed(feature, capabilities)
+
+                # 기본 점수
+                result[f'{name}_score'] = detection_result.score
+                result[f'{name}_anomaly'] = 1 if detection_result.is_anomaly else 0
+
+                # 상세 정보 추가
+                if name == 'residual':
+                    # ResidualDetector: 각 메트릭의 예측값, 실제값, 오차
+                    for metric_name, detail in detection_result.metric_details.items():
+                        prefix = f'residual_{metric_name}'
+                        result[f'{prefix}_actual'] = detail.actual_value
+                        result[f'{prefix}_predicted'] = detail.predicted_value
+                        result[f'{prefix}_error'] = detail.error
+                        result[f'{prefix}_normalized_error'] = detail.normalized_error
+
+                    result['residual_explanation'] = detection_result.explanation
+
+                elif name == 'multivariate':
+                    # MultivariateDetector: 다변량 패턴 정보
+                    result['multivariate_explanation'] = detection_result.explanation
+                    if detection_result.dominant_metric:
+                        result['multivariate_dominant_metric'] = detection_result.dominant_metric
+
             except Exception as e:
                 logger.error(f"Error in {name} detector: {e}")
                 result[f'{name}_score'] = 0.0

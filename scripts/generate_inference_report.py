@@ -634,22 +634,63 @@ class InferenceReportGenerator:
                             report_lines.append(f"  - {detail}")
                         report_lines.append("")
 
-                # 탐지기별 구체적 설명
+                # 탐지기별 구체적 설명 (상세 정보 활용)
                 if residual_score > 0.5:
                     report_lines.append("**TCN (Residual Detector) 탐지 이유**:")
                     report_lines.append("")
-                    report_lines.append(f"  - TCN 모델이 학습한 시계열 패턴과 **현재 패턴이 {residual_score:.1%} 차이**")
-                    report_lines.append("  - 메트릭 간 상관관계가 학습 데이터와 다름")
-                    report_lines.append("  - 예: 정상 시 'UDP RTT ↑ → eCPRI Delay ↑'인데, 현재는 역관계 또는 무상관")
-                    report_lines.append("")
+
+                    # 새로운 상세 컬럼 확인
+                    has_prediction_details = any(col.startswith('residual_') and col.endswith('_predicted') for col in row.index)
+
+                    if has_prediction_details:
+                        # 예측값 정보가 있는 경우
+                        report_lines.append("  - **TCN 모델 예측과 실제값 비교**:")
+                        report_lines.append("")
+
+                        for metric in ['udp_echo', 'ecpri', 'lbm']:
+                            predicted_col = f'residual_{metric}_predicted'
+                            actual_col = f'residual_{metric}_actual'
+                            error_col = f'residual_{metric}_error'
+
+                            if predicted_col in row.index and actual_col in row.index:
+                                predicted = row[predicted_col]
+                                actual = row[actual_col]
+                                error = row[error_col] if error_col in row.index else (actual - predicted)
+
+                                if pd.notna(predicted) and pd.notna(actual):
+                                    error_pct = abs(error / predicted * 100) if predicted > 0 else 0
+                                    metric_name_kr = {'udp_echo': 'UDP Echo RTT', 'ecpri': 'eCPRI Delay', 'lbm': 'LBM RTT'}.get(metric, metric)
+
+                                    if abs(error_pct) > 20:  # 유의미한 오차만 표시
+                                        report_lines.append(f"  - **{metric_name_kr}**:")
+                                        report_lines.append(f"    - 예측값: {predicted:.2f}")
+                                        report_lines.append(f"    - 실제값: {actual:.2f}")
+                                        report_lines.append(f"    - 오차: {error:+.2f} ({error_pct:.0f}% 차이)")
+                                        report_lines.append("")
+
+                        # Explanation 컬럼이 있으면 사용
+                        if 'residual_explanation' in row.index and pd.notna(row['residual_explanation']):
+                            report_lines.append(f"  - **자동 진단**: {row['residual_explanation']}")
+                            report_lines.append("")
+                    else:
+                        # 기존 방식 (예측 정보 없음)
+                        report_lines.append(f"  - TCN 모델이 학습한 시계열 패턴과 **현재 패턴이 {residual_score:.1%} 차이**")
+                        report_lines.append("  - 메트릭 간 상관관계가 학습 데이터와 다름")
+                        report_lines.append("")
 
                 if multivariate_score > 0.3:
                     report_lines.append("**Isolation Forest (Multivariate Detector) 탐지 이유**:")
                     report_lines.append("")
-                    report_lines.append(f"  - 메트릭 조합 패턴이 학습 데이터에서 **{multivariate_score:.1%} isolated (드문 패턴)**")
-                    report_lines.append("  - 개별 메트릭은 정상이어도, 조합이 비정상")
-                    report_lines.append("  - 예: UDP RTT=5ms, eCPRI=150μs 각각은 정상이지만, 이 조합은 학습 데이터에 없음")
-                    report_lines.append("")
+
+                    # Explanation 컬럼이 있으면 사용
+                    if 'multivariate_explanation' in row.index and pd.notna(row['multivariate_explanation']):
+                        report_lines.append(f"  - {row['multivariate_explanation']}")
+                        report_lines.append("")
+                    else:
+                        # 기존 방식
+                        report_lines.append(f"  - 메트릭 조합 패턴이 학습 데이터에서 **{multivariate_score:.1%} isolated (드문 패턴)**")
+                        report_lines.append("  - 개별 메트릭은 정상이어도, 조합이 비정상")
+                        report_lines.append("")
 
                 # 결론
                 if not problems and (residual_score < 0.3 and multivariate_score < 0.3):

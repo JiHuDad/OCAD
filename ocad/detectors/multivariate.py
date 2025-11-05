@@ -9,7 +9,7 @@ import numpy as np
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
-from ..core.models import Capabilities, FeatureVector
+from ..core.models import Capabilities, FeatureVector, DetectionResult, MetricDetectionDetail
 from .base import BaseDetector
 
 
@@ -107,9 +107,203 @@ class MultivariateDetector(BaseDetector):
                     group_key=group_key,
                     error=str(e),
                 )
-        
+
         return 0.0
-    
+
+    def detect_detailed(self, features: FeatureVector, capabilities: Capabilities) -> DetectionResult:
+        """Detect anomalies with detailed information.
+
+        Args:
+            features: Feature vector to analyze
+            capabilities: Endpoint capabilities
+
+        Returns:
+            DetectionResult with multivariate analysis details
+        """
+        from datetime import datetime
+        import time
+
+        start_time = time.time()
+
+        if not self.can_detect(capabilities):
+            return DetectionResult(
+                score=0.0,
+                is_anomaly=False,
+                detector_name="MultivariateDetector",
+                metric_details={},
+                explanation="다변량 분석에 필요한 메트릭이 부족합니다 (최소 2개 필요).",
+                timestamp=datetime.now(),
+                processing_time_ms=0.0,
+            )
+
+        # Determine group key
+        group_key = self._get_group_key(capabilities)
+
+        # Extract features
+        feature_array = self._extract_feature_array(features, capabilities)
+        if feature_array is None or len(feature_array) < 2:
+            return DetectionResult(
+                score=0.0,
+                is_anomaly=False,
+                detector_name="MultivariateDetector",
+                metric_details={},
+                explanation="유효한 피처를 추출할 수 없습니다.",
+                timestamp=datetime.now(),
+                processing_time_ms=0.0,
+            )
+
+        # Add to history
+        if group_key not in self.feature_history:
+            self.feature_history[group_key] = []
+
+        self.feature_history[group_key].append(features)
+
+        # Keep only recent history
+        if len(self.feature_history[group_key]) > 500:
+            self.feature_history[group_key] = self.feature_history[group_key][-250:]
+
+        # Train model if needed
+        if (group_key not in self.models and
+            len(self.feature_history[group_key]) >= self.min_training_samples):
+            self._train_model(group_key, capabilities)
+
+        # Make prediction
+        score = 0.0
+        anomaly_score_raw = None
+        if group_key in self.models:
+            try:
+                score = self._predict_anomaly(group_key, feature_array)
+                # Get raw anomaly score from Isolation Forest
+                anomaly_score_raw = self.models[group_key].score_samples(
+                    self.scalers[group_key].transform(feature_array.reshape(1, -1))
+                )[0]
+            except Exception as e:
+                self.logger.debug(
+                    "Multivariate prediction failed",
+                    group_key=group_key,
+                    error=str(e),
+                )
+
+        # Create metric details
+        metric_details = self._create_metric_details(features, capabilities, score, anomaly_score_raw)
+
+        # Generate explanation
+        explanation = self._generate_explanation(metric_details, score, len(feature_array))
+
+        processing_time = (time.time() - start_time) * 1000
+
+        return DetectionResult(
+            score=score,
+            is_anomaly=score > 0.5,
+            detector_name="MultivariateDetector",
+            metric_details=metric_details,
+            dominant_metric="multivariate_pattern" if score > 0.5 else None,
+            anomaly_type="multivariate_correlation" if score > 0.5 else None,
+            confidence=score if score > 0 else None,
+            explanation=explanation,
+            timestamp=datetime.now(),
+            processing_time_ms=processing_time,
+        )
+
+    def _create_metric_details(
+        self, features: FeatureVector, capabilities: Capabilities, score: float, anomaly_score_raw: Optional[float]
+    ) -> Dict[str, MetricDetectionDetail]:
+        """Create metric details for multivariate detection.
+
+        Args:
+            features: Feature vector
+            capabilities: Capabilities
+            score: Normalized anomaly score
+            anomaly_score_raw: Raw anomaly score from Isolation Forest
+
+        Returns:
+            Dictionary of metric details
+        """
+        details = {}
+
+        # For multivariate detector, we create a single "pattern" entry
+        # since it analyzes correlations rather than individual metrics
+        details["multivariate_pattern"] = MetricDetectionDetail(
+            metric_name="multivariate_pattern",
+            actual_value=anomaly_score_raw if anomaly_score_raw else score,
+            score=score,
+            is_anomalous=score > 0.5,
+            explanation=(
+                f"메트릭 조합 패턴이 학습 데이터에서 {score:.1%} isolated (드문 패턴)"
+                if score > 0.5
+                else "메트릭 조합 패턴이 정상 범위 내"
+            ),
+        )
+
+        # Also include individual metric values for context
+        if capabilities.udp_echo and features.udp_echo_p95:
+            details["udp_echo_context"] = MetricDetectionDetail(
+                metric_name="udp_echo",
+                actual_value=features.udp_echo_p95,
+                score=0.0,  # Individual score not applicable
+                is_anomalous=False,
+                explanation=f"값: {features.udp_echo_p95:.2f} ms (조합 분석용)",
+            )
+
+        if capabilities.ecpri_delay and features.ecpri_p95:
+            details["ecpri_context"] = MetricDetectionDetail(
+                metric_name="ecpri",
+                actual_value=features.ecpri_p95 / 1000.0,  # Convert to ms
+                score=0.0,
+                is_anomalous=False,
+                explanation=f"값: {features.ecpri_p95 / 1000.0:.2f} ms (조합 분석용)",
+            )
+
+        if capabilities.lbm and features.lbm_rtt_p95:
+            details["lbm_context"] = MetricDetectionDetail(
+                metric_name="lbm",
+                actual_value=features.lbm_rtt_p95,
+                score=0.0,
+                is_anomalous=False,
+                explanation=f"값: {features.lbm_rtt_p95:.2f} ms (조합 분석용)",
+            )
+
+        return details
+
+    def _generate_explanation(self, metric_details: Dict[str, MetricDetectionDetail], score: float, num_features: int) -> str:
+        """Generate human-readable explanation.
+
+        Args:
+            metric_details: Metric detection details
+            score: Final score
+            num_features: Number of features analyzed
+
+        Returns:
+            Explanation string
+        """
+        if score < 0.3:
+            return f"메트릭 조합 패턴이 정상입니다 ({num_features}개 피처 분석)."
+
+        if score < 0.5:
+            return f"메트릭 조합이 약간 이례적이지만 (점수: {score:.2f}), 임계값 이하입니다."
+
+        # Extract context values
+        udp_val = metric_details.get("udp_echo_context")
+        ecpri_val = metric_details.get("ecpri_context")
+        lbm_val = metric_details.get("lbm_context")
+
+        parts = ["Isolation Forest가 비정상 패턴 탐지:"]
+
+        if udp_val and ecpri_val:
+            parts.append(
+                f"UDP RTT={udp_val.actual_value:.2f}ms와 eCPRI Delay={ecpri_val.actual_value:.2f}ms의 조합이 학습 데이터에 없음"
+            )
+        elif udp_val and lbm_val:
+            parts.append(
+                f"UDP RTT={udp_val.actual_value:.2f}ms와 LBM RTT={lbm_val.actual_value:.2f}ms의 조합이 학습 데이터에 없음"
+            )
+        else:
+            parts.append("개별 메트릭은 정상이지만, 메트릭 간 상관관계가 비정상")
+
+        parts.append(f"(Isolation Score: {score:.2f}, {num_features}개 피처)")
+
+        return " ".join(parts)
+
     def _get_group_key(self, capabilities: Capabilities) -> str:
         """Get group key for similar endpoints.
         

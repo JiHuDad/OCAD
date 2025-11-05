@@ -70,10 +70,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `ocad/plugins/protocol_adapters/cfm/`: CFM 어댑터 예제
   - `ocad/cli.py`: list-plugins, plugin-info CLI 명령어 추가
   - `config/plugins.example.yaml`: 플러그인 설정 템플릿
+- ✅ **Phase 1 완료**: BFD 프로토콜 지원
+  - `ocad/plugins/protocol_adapters/bfd/`: BFD 어댑터 구현
+    - 7가지 메트릭 수집 (session_state, detection_time, echo_interval, remote_state, diagnostic_code, multiplier, flap_count)
+    - 플래핑(Flapping) 탐지 기능
+    - 정상 동작 시뮬레이션 및 이상 상황 시뮬레이션
+  - `ocad/plugins/detectors/lstm/`: LSTM 탐지기 구현 (PyTorch 기반)
+    - 시퀀스 기반 이상 탐지 (BFD 상태 전이, BGP, CFM, PTP 지원)
+    - 시계열 예측 모델 (Autoregressive)
+  - `ocad/plugins/detectors/hmm/`: HMM 탐지기 구현
+    - 상태 기반 이상 탐지 (BFD, BGP 지원)
+    - SimpleGaussianHMM 폴백 구현 (hmmlearn 없이도 동작)
+  - `scripts/generate_bfd_data.py`: BFD 학습 데이터 생성 스크립트
+  - 테스트 스크립트: 100% 통과 (BFD 어댑터, HMM 탐지기)
 
 **다음 단계**:
 1. ✅ **Phase 0 (Week 1-2)**: 플러그인 인프라 구축 완료!
-2. **Phase 1 (Week 3-4)**: BFD 프로토콜 지원 (LSTM, HMM 모델)
+2. ✅ **Phase 1 (Week 3-4)**: BFD 프로토콜 지원 완료!
 3. **Phase 2 (Week 5-8)**: BGP 프로토콜 지원 (GNN 모델)
 4. **Phase 3 (Week 9-10)**: PTP 프로토콜 지원 (TCN 재사용)
 5. CFM 담당자 협의 → 실제 데이터 수집 가능 여부 확인

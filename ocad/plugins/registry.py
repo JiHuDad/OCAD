@@ -4,14 +4,32 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 import importlib.util
 import sys
+import logging
 
-import structlog
+# Try to use structlog if available, otherwise fall back to standard logging
+try:
+    from ..core.logging import get_logger
+    logger = get_logger(__name__)
+    HAS_STRUCTLOG = True
+except ImportError:
+    logger = logging.getLogger(__name__)
+    HAS_STRUCTLOG = False
 
-from ..core.logging import get_logger
 from .base import ProtocolAdapter, DetectorPlugin
 
 
-logger = get_logger(__name__)
+def _log(logger_instance, level: str, msg: str, **kwargs):
+    """Helper to log with or without structlog."""
+    if HAS_STRUCTLOG or hasattr(logger_instance, "bind"):
+        # Use structlog keyword arguments
+        getattr(logger_instance, level)(msg, **kwargs)
+    else:
+        # Use standard logging with formatted message
+        if kwargs:
+            formatted_msg = f"{msg} ({', '.join(f'{k}={v}' for k, v in kwargs.items())})"
+        else:
+            formatted_msg = msg
+        getattr(logger_instance, level)(formatted_msg)
 
 
 class PluginRegistry:
@@ -35,7 +53,8 @@ class PluginRegistry:
         """Initialize plugin registry."""
         self.protocol_adapters: Dict[str, ProtocolAdapter] = {}
         self.detectors: Dict[str, DetectorPlugin] = {}
-        self.logger = logger.bind(component="plugin_registry")
+        # Use bind() if available (structlog), otherwise use base logger
+        self.logger = logger.bind(component="plugin_registry") if hasattr(logger, "bind") else logger
 
     def register_protocol_adapter(self, adapter: ProtocolAdapter) -> None:
         """Register a protocol adapter.
@@ -51,7 +70,9 @@ class PluginRegistry:
             raise ValueError("Adapter name cannot be empty")
 
         if name in self.protocol_adapters:
-            self.logger.warning(
+            _log(
+                self.logger,
+                "warning",
                 "Protocol adapter already registered, overwriting",
                 name=name,
                 old_version=self.protocol_adapters[name].version,
@@ -59,7 +80,9 @@ class PluginRegistry:
             )
 
         self.protocol_adapters[name] = adapter
-        self.logger.info(
+        _log(
+            self.logger,
+            "info",
             "Protocol adapter registered",
             name=name,
             version=adapter.version,
@@ -80,7 +103,9 @@ class PluginRegistry:
             raise ValueError("Detector name cannot be empty")
 
         if name in self.detectors:
-            self.logger.warning(
+            _log(
+                self.logger,
+                "warning",
                 "Detector already registered, overwriting",
                 name=name,
                 old_version=self.detectors[name].version,
@@ -88,7 +113,9 @@ class PluginRegistry:
             )
 
         self.detectors[name] = detector
-        self.logger.info(
+        _log(
+            self.logger,
+            "info",
             "Detector registered",
             name=name,
             version=detector.version,
@@ -106,7 +133,7 @@ class PluginRegistry:
         """
         adapter = self.protocol_adapters.get(name)
         if adapter is None:
-            self.logger.warning("Protocol adapter not found", name=name)
+            _log(self.logger, "warning", "Protocol adapter not found", name=name)
         return adapter
 
     def get_detector(self, name: str) -> Optional[DetectorPlugin]:
@@ -120,7 +147,7 @@ class PluginRegistry:
         """
         detector = self.detectors.get(name)
         if detector is None:
-            self.logger.warning("Detector not found", name=name)
+            _log(self.logger, "warning", "Detector not found", name=name)
         return detector
 
     def list_protocol_adapters(self) -> Dict[str, Dict[str, Any]]:
@@ -204,7 +231,9 @@ class PluginRegistry:
                     └── __init__.py
         """
         if not plugin_dir.exists():
-            self.logger.warning(
+            _log(
+                self.logger,
+                "warning",
                 "Plugin directory not found",
                 path=str(plugin_dir),
             )
@@ -236,7 +265,7 @@ class PluginRegistry:
 
             init_file = adapter_dir / "__init__.py"
             if not init_file.exists():
-                self.logger.warning(
+                _log(self.logger, "warning", 
                     "Protocol adapter missing __init__.py",
                     path=str(adapter_dir),
                 )
@@ -247,7 +276,7 @@ class PluginRegistry:
                 if adapter:
                     self.register_protocol_adapter(adapter)
             except Exception as e:
-                self.logger.error(
+                _log(self.logger, "error", 
                     "Failed to load protocol adapter",
                     path=str(adapter_dir),
                     error=str(e),
@@ -270,7 +299,7 @@ class PluginRegistry:
 
             init_file = detector_dir / "__init__.py"
             if not init_file.exists():
-                self.logger.warning(
+                _log(self.logger, "warning", 
                     "Detector missing __init__.py",
                     path=str(detector_dir),
                 )
@@ -281,7 +310,7 @@ class PluginRegistry:
                 if detector:
                     self.register_detector(detector)
             except Exception as e:
-                self.logger.error(
+                _log(self.logger, "error", 
                     "Failed to load detector",
                     path=str(detector_dir),
                     error=str(e),
@@ -305,7 +334,7 @@ class PluginRegistry:
         # Dynamic import
         spec = importlib.util.spec_from_file_location(module_name, init_file)
         if spec is None or spec.loader is None:
-            self.logger.error(
+            _log(self.logger, "error", 
                 "Failed to create module spec",
                 path=str(init_file),
             )
@@ -317,7 +346,7 @@ class PluginRegistry:
 
         # Look for create_adapter() function
         if not hasattr(module, "create_adapter"):
-            self.logger.warning(
+            _log(self.logger, "warning", 
                 "Protocol adapter missing create_adapter()",
                 path=str(plugin_dir),
             )
@@ -328,7 +357,7 @@ class PluginRegistry:
 
         # Validate adapter
         if not isinstance(adapter, ProtocolAdapter):
-            self.logger.error(
+            _log(self.logger, "error", 
                 "create_adapter() did not return ProtocolAdapter",
                 path=str(plugin_dir),
                 type=type(adapter).__name__,
@@ -354,7 +383,7 @@ class PluginRegistry:
         # Dynamic import
         spec = importlib.util.spec_from_file_location(module_name, init_file)
         if spec is None or spec.loader is None:
-            self.logger.error(
+            _log(self.logger, "error", 
                 "Failed to create module spec",
                 path=str(init_file),
             )
@@ -366,7 +395,7 @@ class PluginRegistry:
 
         # Look for create_detector() function
         if not hasattr(module, "create_detector"):
-            self.logger.warning(
+            _log(self.logger, "warning", 
                 "Detector missing create_detector()",
                 path=str(plugin_dir),
             )
@@ -377,7 +406,7 @@ class PluginRegistry:
 
         # Validate detector
         if not isinstance(detector, DetectorPlugin):
-            self.logger.error(
+            _log(self.logger, "error", 
                 "create_detector() did not return DetectorPlugin",
                 path=str(plugin_dir),
                 type=type(detector).__name__,

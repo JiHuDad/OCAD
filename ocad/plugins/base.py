@@ -4,13 +4,14 @@ from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
+import logging
 
-import structlog
-
-from ..core.logging import get_logger
-
-
-logger = get_logger(__name__)
+# Try to use structlog if available, otherwise fall back to standard logging
+try:
+    from ..core.logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    logger = logging.getLogger(__name__)
 
 
 class ProtocolAdapter(ABC):

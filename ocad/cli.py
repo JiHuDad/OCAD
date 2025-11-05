@@ -324,6 +324,131 @@ monitoring:
     console.print(f"  cp {config_path} config/local.yaml")
 
 
+@app.command()
+def list_plugins(
+    plugin_dir: Optional[Path] = typer.Option(None, "--plugin-dir", help="Plugin directory path"),
+):
+    """List all available plugins (protocol adapters and detectors)."""
+    from .plugins.registry import registry
+
+    # Discover plugins
+    if plugin_dir:
+        plugin_path = plugin_dir
+    else:
+        plugin_path = Path(__file__).parent / "plugins"
+
+    console.print(f"[bold]Discovering plugins from: {plugin_path}[/bold]\n")
+    registry.discover_plugins(plugin_path)
+
+    # List protocol adapters
+    adapters = registry.list_protocol_adapters()
+
+    if adapters:
+        console.print("[bold cyan]Protocol Adapters:[/bold cyan]")
+        table = Table()
+        table.add_column("Name")
+        table.add_column("Version")
+        table.add_column("Supported Metrics")
+        table.add_column("Recommended Models")
+
+        for name, info in adapters.items():
+            metrics = ", ".join(info["supported_metrics"][:3])
+            if len(info["supported_metrics"]) > 3:
+                metrics += f" (+{len(info['supported_metrics']) - 3} more)"
+
+            models = ", ".join(info["recommended_models"])
+
+            table.add_row(
+                name,
+                info["version"],
+                metrics,
+                models,
+            )
+
+        console.print(table)
+        console.print()
+    else:
+        console.print("[yellow]No protocol adapters found[/yellow]\n")
+
+    # List detectors
+    detectors = registry.list_detectors()
+
+    if detectors:
+        console.print("[bold magenta]Detectors:[/bold magenta]")
+        table = Table()
+        table.add_column("Name")
+        table.add_column("Version")
+        table.add_column("Supported Protocols")
+
+        for name, info in detectors.items():
+            protocols = ", ".join(info["supported_protocols"])
+
+            table.add_row(
+                name,
+                info["version"],
+                protocols,
+            )
+
+        console.print(table)
+    else:
+        console.print("[yellow]No detectors found[/yellow]")
+
+
+@app.command()
+def plugin_info(
+    name: str = typer.Argument(..., help="Plugin name (protocol adapter or detector)"),
+    plugin_dir: Optional[Path] = typer.Option(None, "--plugin-dir", help="Plugin directory path"),
+):
+    """Show detailed information about a specific plugin."""
+    from .plugins.registry import registry
+
+    # Discover plugins
+    if plugin_dir:
+        plugin_path = plugin_dir
+    else:
+        plugin_path = Path(__file__).parent / "plugins"
+
+    registry.discover_plugins(plugin_path)
+
+    # Check protocol adapters
+    adapter = registry.get_protocol_adapter(name)
+    if adapter:
+        console.print(f"[bold cyan]Protocol Adapter: {name}[/bold cyan]")
+        console.print(f"Version: {adapter.version}")
+        console.print(f"Description: {adapter.get_description()}")
+        console.print()
+
+        console.print("[bold]Supported Metrics:[/bold]")
+        for metric in adapter.supported_metrics:
+            console.print(f"  • {metric}")
+        console.print()
+
+        console.print("[bold]Recommended AI Models:[/bold]")
+        for model in adapter.get_recommended_models():
+            console.print(f"  • {model}")
+
+        return
+
+    # Check detectors
+    detector = registry.get_detector(name)
+    if detector:
+        console.print(f"[bold magenta]Detector: {name}[/bold magenta]")
+        console.print(f"Version: {detector.version}")
+        console.print(f"Description: {detector.get_description()}")
+        console.print()
+
+        console.print("[bold]Supported Protocols:[/bold]")
+        for protocol in detector.supported_protocols:
+            console.print(f"  • {protocol}")
+
+        return
+
+    # Not found
+    console.print(f"[red]✗[/red] Plugin '{name}' not found")
+    console.print("Run 'list-plugins' to see available plugins")
+    raise typer.Exit(1)
+
+
 def main():
     """Main CLI entry point."""
     app()

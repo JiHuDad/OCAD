@@ -64,9 +64,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - 구현 로드맵 수립 (Phase 0-4, 12주 계획)
 - ✅ 문서 작성
   - [PROTOCOL-ANOMALY-DETECTION-PLAN.md](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md) - 프로토콜 확장 계획
+- ✅ **Phase 0 완료**: 플러그인 인프라 구축
+  - `ocad/plugins/base.py`: ProtocolAdapter, DetectorPlugin 인터페이스
+  - `ocad/plugins/registry.py`: PluginRegistry 동적 로딩
+  - `ocad/plugins/protocol_adapters/cfm/`: CFM 어댑터 예제
+  - `ocad/cli.py`: list-plugins, plugin-info CLI 명령어 추가
+  - `config/plugins.example.yaml`: 플러그인 설정 템플릿
 
 **다음 단계**:
-1. **Phase 0 (Week 1-2)**: 플러그인 인프라 구축 (PluginRegistry, 인터페이스)
+1. ✅ **Phase 0 (Week 1-2)**: 플러그인 인프라 구축 완료!
 2. **Phase 1 (Week 3-4)**: BFD 프로토콜 지원 (LSTM, HMM 모델)
 3. **Phase 2 (Week 5-8)**: BGP 프로토콜 지원 (GNN 모델)
 4. **Phase 3 (Week 9-10)**: PTP 프로토콜 지원 (TCN 재사용)

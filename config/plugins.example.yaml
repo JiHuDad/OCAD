@@ -1,0 +1,133 @@
+# OCAD Plugin Configuration Example
+# Save as config/plugins.yaml
+# This file configures protocol adapters and detectors
+
+# Protocol Adapters
+protocol_adapters:
+  # CFM Protocol (ORAN - Currently Implemented)
+  cfm:
+    enabled: true
+    config:
+      endpoints:
+        - id: "oru-1"
+          host: "192.168.1.100"
+          port: 830
+          udp_echo: true
+          ecpri: true
+          lbm: true
+          ccm_min: false
+
+  # BFD Protocol (Future Implementation)
+  bfd:
+    enabled: false  # Enable when BFD adapter is implemented
+    config:
+      sessions:
+        - id: "bfd-session-1"
+          local_ip: "192.168.1.1"
+          remote_ip: "192.168.1.2"
+          interval_ms: 50
+          multiplier: 3
+
+  # BGP Protocol (Future Implementation)
+  bgp:
+    enabled: false  # Enable when BGP adapter is implemented
+    config:
+      peers:
+        - id: "bgp-peer-1"
+          peer_ip: "10.0.0.1"
+          peer_as: 64512
+          local_as: 64513
+
+  # PTP Protocol (Future Implementation)
+  ptp:
+    enabled: false  # Enable when PTP adapter is implemented
+    config:
+      slaves:
+        - id: "ptp-slave-1"
+          interface: "eth0"
+          domain: 0
+
+# Detector Plugins
+detectors:
+  # TCN Detector (Temporal Convolutional Network)
+  tcn:
+    enabled: true
+    protocols: ["cfm", "ptp"]  # Protocols this detector supports
+    config:
+      model_path: "ocad/models/tcn/"
+      use_pretrained: true
+      threshold: 3.0
+
+  # LSTM Detector (Long Short-Term Memory)
+  lstm:
+    enabled: false  # Enable when LSTM detector is implemented
+    protocols: ["bfd"]
+    config:
+      model_path: "ocad/models/lstm/"
+      use_pretrained: true
+      sequence_length: 50
+
+  # GNN Detector (Graph Neural Network)
+  gnn:
+    enabled: false  # Enable when GNN detector is implemented
+    protocols: ["bgp"]
+    config:
+      model_path: "ocad/models/gnn/"
+      use_pretrained: true
+      node_features: 10
+
+  # HMM Detector (Hidden Markov Model)
+  hmm:
+    enabled: false  # Enable when HMM detector is implemented
+    protocols: ["bfd"]
+    config:
+      model_path: "ocad/models/hmm/"
+      n_components: 3
+
+  # Autoencoder Detector
+  autoencoder:
+    enabled: false  # Enable when Autoencoder detector is implemented
+    protocols: ["ptp"]
+    config:
+      model_path: "ocad/models/autoencoder/"
+      encoding_dim: 32
+
+  # Isolation Forest (Multivariate Anomaly Detection)
+  isolation_forest:
+    enabled: true
+    protocols: ["cfm", "bgp"]
+    config:
+      model_path: "ocad/models/isolation_forest/"
+      use_pretrained: true
+
+# Plugin Discovery
+plugin_discovery:
+  # Directories to scan for plugins
+  search_paths:
+    - "ocad/plugins"
+    - "~/.ocad/plugins"  # User-installed plugins
+
+  # Auto-load plugins on startup
+  auto_load: true
+
+  # Plugin loading order (load order matters for dependencies)
+  load_order:
+    - "protocol_adapters"
+    - "detectors"
+
+# Advanced Settings
+advanced:
+  # Plugin hot-reloading (development only)
+  hot_reload: false
+
+  # Plugin validation on load
+  validate_on_load: true
+
+  # Plugin error handling
+  error_handling:
+    # Continue on plugin load error
+    continue_on_error: true
+    # Retry failed plugins
+    retry_failed: false
+    # Maximum plugin load attempts
+    max_attempts: 1

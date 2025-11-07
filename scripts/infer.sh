@@ -137,14 +137,17 @@ if [ ! -d "$MODEL_DIR" ]; then
     exit 1
 fi
 
-# Find model file
-MODEL_FILE=$(find_model_file "$MODEL_DIR")
-if [ -z "$MODEL_FILE" ]; then
-    log_error "No model file (.pkl or .pth) found in: $MODEL_DIR"
-    exit 1
+# Find model file (skip for CFM which needs multiple model files)
+if [ "$PROTOCOL" != "cfm" ]; then
+    MODEL_FILE=$(find_model_file "$MODEL_DIR")
+    if [ -z "$MODEL_FILE" ]; then
+        log_error "No model file (.pkl or .pth) found in: $MODEL_DIR"
+        exit 1
+    fi
+    log_info "Found model file: $MODEL_FILE"
+else
+    log_info "Using model directory: $MODEL_DIR (CFM needs multiple model files)"
 fi
-
-log_info "Found model file: $MODEL_FILE"
 
 # Validate data directory exists
 if [ ! -d "$DATA_DIR" ]; then
@@ -215,7 +218,7 @@ case $PROTOCOL in
     cfm)
         log_info "Running CFM Isolation Forest inference..."
         python "$SCRIPT_DIR/infer_cfm_isoforest.py" \
-            --model "$MODEL_FILE" \
+            --model "$MODEL_DIR" \
             --data "$DATA_DIR" \
             --output "$PREDICTIONS_FILE"
         ;;

@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
-"""Run inference on CFM validation data using trained Isolation Forest models.
+"""Run inference on CFM data using trained Isolation Forest models.
 
 Usage:
+    # Validation mode (with ground truth)
     python scripts/infer_cfm_isoforest.py \
-        --val-normal data/cfm/val_normal/cfm_val_normal_*.parquet \
-        --val-anomaly data/cfm/val_anomaly/cfm_val_anomaly_*.parquet \
-        --models-dir models/cfm
+        --model models/cfm \
+        --data data/cfm/val \
+        --output results/cfm/predictions.csv
+
+    # Production mode (without ground truth)
+    python scripts/infer_cfm_isoforest.py \
+        --model models/cfm \
+        --data data/cfm/production \
+        --output results/cfm/predictions.csv
 """
 
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -29,6 +36,10 @@ CFM_METRICS = [
 
 def load_models(models_dir: Path, version: str = "1.0.0") -> Dict[str, tuple]:
     """Load trained Isolation Forest models for all CFM metrics.
+
+    Args:
+        models_dir: Directory containing model files
+        version: Model version to load
 
     Returns:
         Dictionary mapping metric names to (model, scaler) tuples
@@ -59,25 +70,56 @@ def load_models(models_dir: Path, version: str = "1.0.0") -> Dict[str, tuple]:
     return models
 
 
-def run_inference_on_dataset(
-    df: pd.DataFrame,
-    models: Dict[str, tuple],
-    dataset_name: str,
-) -> pd.DataFrame:
+def load_data(data_path: Path) -> pd.DataFrame:
+    """Load data from file or directory.
+
+    Args:
+        data_path: Path to data file or directory
+
+    Returns:
+        Combined DataFrame
+    """
+    if data_path.is_file():
+        # Single file
+        if data_path.suffix == ".parquet":
+            return pd.read_parquet(data_path)
+        elif data_path.suffix == ".csv":
+            return pd.read_csv(data_path)
+        else:
+            raise ValueError(f"Unsupported file format: {data_path.suffix}")
+    elif data_path.is_dir():
+        # Directory - find all parquet files
+        parquet_files = list(data_path.glob("*.parquet"))
+        if not parquet_files:
+            # Try csv
+            csv_files = list(data_path.glob("*.csv"))
+            if not csv_files:
+                raise ValueError(f"No parquet or csv files found in {data_path}")
+            return pd.concat([pd.read_csv(f) for f in csv_files], ignore_index=True)
+        return pd.concat([pd.read_parquet(f) for f in parquet_files], ignore_index=True)
+    else:
+        raise ValueError(f"Data path not found: {data_path}")
+
+
+def run_inference(df: pd.DataFrame, models: Dict[str, tuple]) -> pd.DataFrame:
     """Run inference on a dataset.
 
     Args:
         df: Input dataframe with CFM metrics
         models: Dictionary of (model, scaler) tuples
-        dataset_name: Name of dataset (for logging)
 
     Returns:
         DataFrame with predictions added
     """
     print(f"\n{'='*70}")
-    print(f"Running inference on {dataset_name}")
+    print(f"Running inference")
     print(f"{'='*70}")
     print(f"Records: {len(df):,}")
+
+    # Check for required metrics
+    missing_metrics = [m for m in models.keys() if m not in df.columns]
+    if missing_metrics:
+        raise ValueError(f"Missing required metrics in data: {missing_metrics}")
 
     # Add prediction columns
     for metric in models.keys():
@@ -122,8 +164,18 @@ def run_inference_on_dataset(
     return df
 
 
-def calculate_metrics(df: pd.DataFrame) -> Dict[str, float]:
-    """Calculate performance metrics."""
+def calculate_metrics(df: pd.DataFrame) -> Optional[Dict[str, float]]:
+    """Calculate performance metrics if ground truth is available.
+
+    Args:
+        df: DataFrame with predictions
+
+    Returns:
+        Metrics dictionary if is_anomaly column exists, None otherwise
+    """
+    if "is_anomaly" not in df.columns:
+        return None
+
     # Ground truth
     y_true = df["is_anomaly"].values
     y_pred = df["ensemble_anomaly"].values
@@ -154,30 +206,30 @@ def calculate_metrics(df: pd.DataFrame) -> Dict[str, float]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run inference on CFM validation data using Isolation Forest",
+        description="Run inference on CFM data using Isolation Forest",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
 
     parser.add_argument(
-        "--val-normal",
-        type=str,
-        required=True,
-        help="Path to validation normal data (supports wildcards)",
-    )
-
-    parser.add_argument(
-        "--val-anomaly",
-        type=str,
-        required=True,
-        help="Path to validation anomaly data (supports wildcards)",
-    )
-
-    parser.add_argument(
-        "--models-dir",
+        "--model",
         type=Path,
-        default=Path("models/cfm"),
-        help="Directory containing trained models (default: models/cfm)",
+        required=True,
+        help="Path to model directory containing trained models",
+    )
+
+    parser.add_argument(
+        "--data",
+        type=Path,
+        required=True,
+        help="Path to data file or directory",
+    )
+
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("results/cfm/predictions.csv"),
+        help="Output predictions file (default: results/cfm/predictions.csv)",
     )
 
     parser.add_argument(
@@ -187,105 +239,91 @@ def main():
         help="Model version to load (default: 1.0.0)",
     )
 
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("results/cfm"),
-        help="Output directory for predictions (default: results/cfm)",
-    )
-
     args = parser.parse_args()
 
     print("="*70)
     print("CFM Inference (Isolation Forest)")
     print("="*70)
 
+    # Validate paths
+    if not args.model.exists():
+        print(f"❌ Model directory not found: {args.model}")
+        return 1
+
+    if not args.data.exists():
+        print(f"❌ Data path not found: {args.data}")
+        return 1
+
     # Load models
     try:
-        models = load_models(args.models_dir, args.version)
+        models = load_models(args.model, args.version)
     except Exception as e:
         print(f"\n❌ Error loading models: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
     print(f"\nLoaded {len(models)} models: {', '.join(models.keys())}")
 
-    # Find data files
-    val_normal_files = glob.glob(args.val_normal)
-    val_anomaly_files = glob.glob(args.val_anomaly)
+    # Load data
+    try:
+        print(f"\nLoading data from {args.data}...")
+        df = load_data(args.data)
+        print(f"  Loaded {len(df):,} records")
 
-    if not val_normal_files:
-        print(f"❌ No validation normal files found: {args.val_normal}")
+        # Check if validation mode (has ground truth)
+        has_ground_truth = "is_anomaly" in df.columns
+        if has_ground_truth:
+            print(f"  ✅ Validation mode: Ground truth available (is_anomaly column found)")
+            n_anomalies = df["is_anomaly"].sum()
+            print(f"  Ground truth anomalies: {n_anomalies:,} ({n_anomalies/len(df)*100:.1f}%)")
+        else:
+            print(f"  ℹ️  Production mode: No ground truth (is_anomaly column not found)")
+
+    except Exception as e:
+        print(f"\n❌ Error loading data: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
-
-    if not val_anomaly_files:
-        print(f"❌ No validation anomaly files found: {args.val_anomaly}")
-        return 1
-
-    # Load validation data
-    print(f"\nLoading validation data...")
-
-    df_normal = pd.concat([pd.read_parquet(f) for f in val_normal_files], ignore_index=True)
-    df_anomaly = pd.concat([pd.read_parquet(f) for f in val_anomaly_files], ignore_index=True)
-
-    print(f"  Normal: {len(df_normal):,} records")
-    print(f"  Anomaly: {len(df_anomaly):,} records")
 
     # Run inference
-    df_normal_pred = run_inference_on_dataset(df_normal, models, "Validation Normal")
-    df_anomaly_pred = run_inference_on_dataset(df_anomaly, models, "Validation Anomaly")
+    try:
+        df_pred = run_inference(df, models)
+    except Exception as e:
+        print(f"\n❌ Error during inference: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
-    # Calculate metrics
-    print(f"\n{'='*70}")
-    print("Performance Metrics")
-    print(f"{'='*70}")
+    # Calculate metrics if ground truth available
+    if has_ground_truth:
+        print(f"\n{'='*70}")
+        print("Performance Metrics")
+        print(f"{'='*70}")
 
-    metrics_normal = calculate_metrics(df_normal_pred)
-    metrics_anomaly = calculate_metrics(df_anomaly_pred)
-
-    print(f"\nValidation Normal (should detect few anomalies):")
-    print(f"  Accuracy:  {metrics_normal['accuracy']*100:.2f}%")
-    print(f"  False Positives: {metrics_normal['false_positives']} / {metrics_normal['total_evaluated']}")
-    print(f"  False Positive Rate: {metrics_normal['false_positives']/metrics_normal['total_evaluated']*100:.2f}%")
-
-    print(f"\nValidation Anomaly (should detect anomalies):")
-    print(f"  Accuracy:  {metrics_anomaly['accuracy']*100:.2f}%")
-    print(f"  Precision: {metrics_anomaly['precision']*100:.2f}%")
-    print(f"  Recall:    {metrics_anomaly['recall']*100:.2f}%")
-    print(f"  F1-Score:  {metrics_anomaly['f1_score']*100:.2f}%")
-
-    # Combine datasets
-    df_combined = pd.concat([df_normal_pred, df_anomaly_pred], ignore_index=True)
-    metrics_combined = calculate_metrics(df_combined)
-
-    print(f"\nCombined (Overall Performance):")
-    print(f"  Accuracy:  {metrics_combined['accuracy']*100:.2f}%")
-    print(f"  Precision: {metrics_combined['precision']*100:.2f}%")
-    print(f"  Recall:    {metrics_combined['recall']*100:.2f}%")
-    print(f"  F1-Score:  {metrics_combined['f1_score']*100:.2f}%")
+        metrics = calculate_metrics(df_pred)
+        if metrics:
+            print(f"\n  Accuracy:  {metrics['accuracy']*100:.2f}%")
+            print(f"  Precision: {metrics['precision']*100:.2f}%")
+            print(f"  Recall:    {metrics['recall']*100:.2f}%")
+            print(f"  F1-Score:  {metrics['f1_score']*100:.2f}%")
+            print(f"\n  True Positives:  {metrics['true_positives']}")
+            print(f"  False Positives: {metrics['false_positives']}")
+            print(f"  True Negatives:  {metrics['true_negatives']}")
+            print(f"  False Negatives: {metrics['false_negatives']}")
 
     # Save predictions
-    args.output.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    predictions_csv = args.output / f"predictions_{timestamp}.csv"
-    df_combined.to_csv(predictions_csv, index=False)
-    print(f"\n✅ Predictions saved: {predictions_csv}")
-
-    # Save metrics
-    metrics_csv = args.output / f"metrics_{timestamp}.csv"
-    metrics_df = pd.DataFrame([
-        {"dataset": "normal", **metrics_normal},
-        {"dataset": "anomaly", **metrics_anomaly},
-        {"dataset": "combined", **metrics_combined},
-    ])
-    metrics_df.to_csv(metrics_csv, index=False)
-    print(f"✅ Metrics saved: {metrics_csv}")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    df_pred.to_csv(args.output, index=False)
+    print(f"\n✅ Predictions saved: {args.output}")
 
     print(f"\n{'='*70}")
     print("✅ Inference completed successfully!")
     print(f"{'='*70}")
-    print(f"\nNext steps:")
-    print(f"  python scripts/report_cfm.py --predictions {predictions_csv} --metrics {metrics_csv}")
+
+    if has_ground_truth:
+        print(f"\nNext steps:")
+        print(f"  python scripts/report_cfm.py --predictions {args.output}")
 
     return 0
 

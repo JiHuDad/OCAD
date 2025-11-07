@@ -152,16 +152,17 @@ class BFDSessionSimulator:
                     diagnostic = BFDDiagnostic.PATH_DOWN
                     self.flap_count += 1
         else:
-            # Normal behavior: very rare state changes
-            if random.random() < 0.01:  # 1% chance
+            # Normal behavior: maintain stable UP state
+            # Auto-recover to UP if in abnormal state during normal periods
+            if self.local_state != BFDState.UP:
+                # Recovery to normal UP state
+                self.local_state = BFDState.UP
                 state_changed = True
-                if self.local_state == BFDState.UP:
-                    self.local_state = BFDState.DOWN
-                    diagnostic = BFDDiagnostic.CONTROL_DETECTION_TIME_EXPIRED
-                else:
-                    self.local_state = BFDState.UP
-                    diagnostic = BFDDiagnostic.NO_DIAGNOSTIC
-                self.flap_count += 1
+                diagnostic = BFDDiagnostic.NO_DIAGNOSTIC
+            else:
+                # Already in UP state, no change
+                state_changed = False
+                diagnostic = BFDDiagnostic.NO_DIAGNOSTIC
 
         if not state_changed:
             diagnostic = BFDDiagnostic.NO_DIAGNOSTIC
@@ -178,6 +179,14 @@ class BFDSessionSimulator:
         else:
             echo_interval_ms = float(self.interval_ms)
 
+        # Determine actual anomaly status
+        # Anomaly if: period flag OR abnormal state OR excessive flapping
+        is_actual_anomaly = (
+            is_anomaly_period  # Explicitly marked anomaly period
+            or self.local_state != BFDState.UP  # Not in UP state
+            or self.flap_count > 5  # Excessive flapping
+        )
+
         return {
             "timestamp": timestamp,
             "source_id": self.session_id,
@@ -193,7 +202,7 @@ class BFDSessionSimulator:
             "diagnostic_name": BFDDiagnostic.NAMES[diagnostic],
             "multiplier": self.multiplier,
             "flap_count": self.flap_count,
-            "is_anomaly": is_anomaly_period,
+            "is_anomaly": is_actual_anomaly,
         }
 
 

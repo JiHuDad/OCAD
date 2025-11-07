@@ -356,7 +356,7 @@ def generate_markdown_report(
     lines.append("")
 
     if overall is not None:
-        total = overall['total']
+        total = overall['total_evaluated']
         true_anomalies = overall['true_positives'] + overall['false_negatives']
         pred_anomalies = overall['true_positives'] + overall['false_positives']
         true_normal = total - true_anomalies

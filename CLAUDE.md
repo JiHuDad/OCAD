@@ -97,6 +97,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - **README.md 업데이트**: 플러그인 시스템 섹션 추가 (지원 프로토콜 표, 빠른 시작 명령어, 문서 링크)
   - **CLAUDE.md 업데이트**: Phase 4 완료 기록
 
+**최근 작업** (2025-11-07):
+
+- ✅ **프로토콜별 통합 쉘 스크립트 구축**
+  - `scripts/train.sh`: 프로토콜별 모델 학습 통합 스크립트
+    - 사용법: `./scripts/train.sh --protocol <bfd|bgp|ptp|cfm> --data <dir> --output <model-dir>`
+    - 자동 모델 타입 탐지 (BFD: HMM/LSTM, BGP: GNN, PTP: TCN, CFM: Isolation Forest)
+    - 메타데이터 자동 생성 (학습 일시, 버전 정보)
+  - `scripts/infer.sh`: 프로토콜별 추론 및 리포트 자동 생성
+    - 사용법: `./scripts/infer.sh --protocol <protocol> --model <dir> --data <dir>`
+    - 타임스탬프 자동 생성 (`results/<protocol>/infer_YYYYMMDD_HHMMSS/`)
+    - 추론 + 리포트 자동 파이프라인
+- ✅ **CFM 인터페이스 통일 (다른 프로토콜과 일관성 확보)**
+  - `scripts/infer_cfm_isoforest.py` 대폭 수정:
+    - Before: `--val-normal`, `--val-anomaly` (이중 구조)
+    - After: `--model`, `--data`, `--output` (통일된 인터페이스)
+    - Validation/Production 모드 자동 감지 (`is_anomaly` 컬럼 유무로 판단)
+  - `scripts/report_cfm.py` 간소화:
+    - `--metrics` 옵션 제거 (중복 데이터 제거)
+    - predictions.csv에서 직접 메트릭 계산
+    - is_anomaly 없어도 리포트 생성 가능 (Production 모드)
+  - `scripts/train.sh` CFM 부분 수정:
+    - `--data` → `--train-data` (train_cfm_isoforest.py 옵션에 맞춤)
+    - `--output` → `--output-dir` (다중 모델 파일 지원)
+    - 학습 데이터 파일 자동 탐색 (디렉토리에서 parquet/csv 찾기)
+- ✅ **is_anomaly 컬럼의 올바른 역할 정립**
+  - **Validation 모드**: is_anomaly 있음 → 성능 평가 포함 (Accuracy, Precision, Recall, F1)
+  - **Production 모드**: is_anomaly 없음 → 순수 예측만 수행
+  - 모든 프로토콜(BFD, BGP, PTP, CFM)에 일관되게 적용
+  - 이전의 혼란스러운 이중 구조 제거 (파일명 분리 + 컬럼 분리)
+- ✅ **버그 수정**
+  - PTP: TCN 탐지기 들여쓰기 오류 수정 (Chomp1d, TemporalBlock, TCNModel)
+  - PTP: report_ptp.py 컬럼명 불일치 수정 (`ground_truth` vs `is_anomaly_actual`)
+  - PTP: report_ptp.py 누락된 `df` 파라미터 추가
+  - CFM: report_cfm.py 키 이름 수정 (`total` → `total_evaluated`)
+
 **다음 단계**:
 1. ✅ **Phase 0 (Week 1-2)**: 플러그인 인프라 구축 완료!
 2. ✅ **Phase 1 (Week 3-4)**: BFD 프로토콜 지원 완료!

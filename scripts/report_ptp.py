@@ -257,8 +257,14 @@ def generate_markdown_report(metrics: dict, output_path: Path) -> None:
         f.write("## 예측 vs 실제 비교 분석\n\n")
 
         # Calculate distribution
-        y_true = df["ground_truth"].astype(int)
-        y_pred = df["predicted"].astype(int)
+        # PTP uses is_anomaly_actual/is_anomaly_predicted column names
+        if "is_anomaly_actual" in df.columns and "is_anomaly_predicted" in df.columns:
+            y_true = df["is_anomaly_actual"].astype(int)
+            y_pred = df["is_anomaly_predicted"].astype(int)
+        else:
+            # Fallback to old column names if present
+            y_true = df.get("ground_truth", pd.Series([0] * len(df))).astype(int)
+            y_pred = df.get("predicted", pd.Series([0] * len(df))).astype(int)
 
         total = len(df)
         true_anomalies = y_true.sum()

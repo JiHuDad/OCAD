@@ -296,6 +296,9 @@ notifications/
 reports/
 *.report.md
 
+# Inference results (train.sh/infer.sh outputs)
+results/
+
 # Temporary test scripts (ad-hoc testing)
 test_*.py
 !tests/test_*.py  # Keep actual test files

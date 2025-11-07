@@ -59,12 +59,12 @@ if HAS_PYTORCH:
         """Chomp layer to ensure causal convolution (no future information leakage)."""
 
         def __init__(self, chomp_size):
-        super(Chomp1d, self).__init__()
-        self.chomp_size = chomp_size
+            super(Chomp1d, self).__init__()
+            self.chomp_size = chomp_size
 
         def forward(self, x):
-        """Remove padding from the right side to maintain causality."""
-        return x[:, :, :-self.chomp_size].contiguous()
+            """Remove padding from the right side to maintain causality."""
+            return x[:, :, :-self.chomp_size].contiguous()
 
 
     class TemporalBlock(nn.Module):
@@ -79,91 +79,91 @@ if HAS_PYTORCH:
         """
 
         def __init__(
-        self,
-        n_inputs,
-        n_outputs,
-        kernel_size,
-        stride,
-        dilation,
-        padding,
-        dropout=0.2
+            self,
+            n_inputs,
+            n_outputs,
+            kernel_size,
+            stride,
+            dilation,
+            padding,
+            dropout=0.2
         ):
-        """Initialize temporal block.
+            """Initialize temporal block.
 
-        Args:
-        n_inputs: Number of input channels
-        n_outputs: Number of output channels
-        kernel_size: Convolution kernel size
-        stride: Convolution stride
-        dilation: Dilation factor
-        padding: Padding size (causal)
-        dropout: Dropout rate
-        """
-        super(TemporalBlock, self).__init__()
+            Args:
+                n_inputs: Number of input channels
+                n_outputs: Number of output channels
+                kernel_size: Convolution kernel size
+                stride: Convolution stride
+                dilation: Dilation factor
+                padding: Padding size (causal)
+                dropout: Dropout rate
+            """
+            super(TemporalBlock, self).__init__()
 
-        # First convolutional layer with dilation
-        self.conv1 = weight_norm(nn.Conv1d(
-        n_inputs,
-        n_outputs,
-        kernel_size,
-        stride=stride,
-        padding=padding,
-        dilation=dilation
-        ))
-        self.chomp1 = Chomp1d(padding)
-        self.relu1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(dropout)
+            # First convolutional layer with dilation
+            self.conv1 = weight_norm(nn.Conv1d(
+                n_inputs,
+                n_outputs,
+                kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation
+            ))
+            self.chomp1 = Chomp1d(padding)
+            self.relu1 = nn.ReLU()
+            self.dropout1 = nn.Dropout(dropout)
 
-        # Second convolutional layer with same dilation
-        self.conv2 = weight_norm(nn.Conv1d(
-        n_outputs,
-        n_outputs,
-        kernel_size,
-        stride=stride,
-        padding=padding,
-        dilation=dilation
-        ))
-        self.chomp2 = Chomp1d(padding)
-        self.relu2 = nn.ReLU()
-        self.dropout2 = nn.Dropout(dropout)
+            # Second convolutional layer with same dilation
+            self.conv2 = weight_norm(nn.Conv1d(
+                n_outputs,
+                n_outputs,
+                kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation
+            ))
+            self.chomp2 = Chomp1d(padding)
+            self.relu2 = nn.ReLU()
+            self.dropout2 = nn.Dropout(dropout)
 
-        # Sequential network
-        self.net = nn.Sequential(
-        self.conv1,
-        self.chomp1,
-        self.relu1,
-        self.dropout1,
-        self.conv2,
-        self.chomp2,
-        self.relu2,
-        self.dropout2
-        )
+            # Sequential network
+            self.net = nn.Sequential(
+                self.conv1,
+                self.chomp1,
+                self.relu1,
+                self.dropout1,
+                self.conv2,
+                self.chomp2,
+                self.relu2,
+                self.dropout2
+            )
 
-        # Residual connection (1x1 conv if dimensions don't match)
-        self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
-        self.relu = nn.ReLU()
+            # Residual connection (1x1 conv if dimensions don't match)
+            self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
+            self.relu = nn.ReLU()
 
-        self.init_weights()
+            self.init_weights()
 
         def init_weights(self):
-        """Initialize weights using normal distribution."""
-        self.conv1.weight.data.normal_(0, 0.01)
-        self.conv2.weight.data.normal_(0, 0.01)
-        if self.downsample is not None:
-        self.downsample.weight.data.normal_(0, 0.01)
+            """Initialize weights using normal distribution."""
+            self.conv1.weight.data.normal_(0, 0.01)
+            self.conv2.weight.data.normal_(0, 0.01)
+            if self.downsample is not None:
+                self.downsample.weight.data.normal_(0, 0.01)
 
         def forward(self, x):
-        """Forward pass with residual connection.
+            """Forward pass with residual connection.
 
-        Args:
-        x: Input tensor of shape (batch, channels, seq_len)
+            Args:
+                x: Input tensor of shape (batch, channels, seq_len)
 
-        Returns:
-        Output tensor of shape (batch, channels, seq_len)
-        """
-        out = self.net(x)
-        res = x if self.downsample is None else self.downsample(x)
-        return self.relu(out + res)
+            Returns:
+                Output tensor of shape (batch, channels, seq_len)
+            """
+            out = self.net(x)
+            res = x if self.downsample is None else self.downsample(x)
+            return self.relu(out + res)
 
 
     class TCNModel(nn.Module):
@@ -181,67 +181,67 @@ if HAS_PYTORCH:
         """
 
         def __init__(
-        self,
-        input_size: int = 1,
-        num_channels: List[int] = None,
-        kernel_size: int = 3,
-        dropout: float = 0.2,
-        output_size: int = 1,
+            self,
+            input_size: int = 1,
+            num_channels: List[int] = None,
+            kernel_size: int = 3,
+            dropout: float = 0.2,
+            output_size: int = 1,
         ):
-        """Initialize TCN model.
+            """Initialize TCN model.
 
-        Args:
-        input_size: Number of input features per timestep
-        num_channels: List of channel sizes for each layer [25, 25, 25, 25]
-        kernel_size: Convolution kernel size (default: 3)
-        dropout: Dropout rate for regularization
-        output_size: Number of output predictions
-        """
-        super(TCNModel, self).__init__()
+            Args:
+                input_size: Number of input features per timestep
+                num_channels: List of channel sizes for each layer [25, 25, 25, 25]
+                kernel_size: Convolution kernel size (default: 3)
+                dropout: Dropout rate for regularization
+                output_size: Number of output predictions
+            """
+            super(TCNModel, self).__init__()
 
-        if num_channels is None:
-        num_channels = [25, 25, 25, 25]  # 4 layers, 25 channels each
+            if num_channels is None:
+                num_channels = [25, 25, 25, 25]  # 4 layers, 25 channels each
 
-        layers = []
-        num_levels = len(num_channels)
+            layers = []
+            num_levels = len(num_channels)
 
-        for i in range(num_levels):
-        dilation_size = 2 ** i  # Exponentially increasing dilation: 1, 2, 4, 8, ...
-        in_channels = input_size if i == 0 else num_channels[i - 1]
-        out_channels = num_channels[i]
+            for i in range(num_levels):
+                dilation_size = 2 ** i  # Exponentially increasing dilation: 1, 2, 4, 8, ...
+                in_channels = input_size if i == 0 else num_channels[i - 1]
+                out_channels = num_channels[i]
 
-        layers.append(TemporalBlock(
-        in_channels,
-        out_channels,
-        kernel_size,
-        stride=1,
-        dilation=dilation_size,
-        padding=(kernel_size - 1) * dilation_size,
-        dropout=dropout
-        ))
+                layers.append(TemporalBlock(
+                    in_channels,
+                    out_channels,
+                    kernel_size,
+                    stride=1,
+                    dilation=dilation_size,
+                    padding=(kernel_size - 1) * dilation_size,
+                    dropout=dropout
+                ))
 
-        self.network = nn.Sequential(*layers)
-        self.linear = nn.Linear(num_channels[-1], output_size)
+            self.network = nn.Sequential(*layers)
+            self.linear = nn.Linear(num_channels[-1], output_size)
 
-        self.receptive_field = 1 + 2 * (kernel_size - 1) * (2 ** num_levels - 1)
+            self.receptive_field = 1 + 2 * (kernel_size - 1) * (2 ** num_levels - 1)
 
         def forward(self, x):
-        """Forward pass through the network.
+            """Forward pass through the network.
 
-        Args:
-        x: Input tensor of shape (batch, input_size, sequence_length)
+            Args:
+                x: Input tensor of shape (batch, input_size, sequence_length)
 
-        Returns:
-        Output tensor of shape (batch, output_size)
-        """
-        # TCN expects (batch, channels, seq_len)
-        y = self.network(x)
+            Returns:
+                Output tensor of shape (batch, output_size)
+            """
+            # TCN expects (batch, channels, seq_len)
+            y = self.network(x)
 
-        # Use the last timestep output
-        # y[:, :, -1] has shape (batch, num_channels[-1])
-        y = self.linear(y[:, :, -1])
+            # Use the last timestep output
+            # y[:, :, -1] has shape (batch, num_channels[-1])
+            y = self.linear(y[:, :, -1])
 
-        return y
+            return y
 
 
 class TCNDetector(DetectorPlugin):

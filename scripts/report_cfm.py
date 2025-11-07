@@ -2,13 +2,17 @@
 """Generate CFM anomaly detection performance report.
 
 This script generates a comprehensive, easy-to-understand report
-analyzing CFM anomaly detection performance using TCN models.
+analyzing CFM anomaly detection performance using Isolation Forest models.
 
 Usage:
-    # Generate report from predictions
+    # Generate report from predictions (validation mode)
     python scripts/report_cfm.py \
-        --predictions results/cfm/predictions_*.csv \
-        --metrics results/cfm/metrics_*.csv \
+        --predictions results/cfm/predictions.csv \
+        --output results/cfm/report.md
+
+    # Generate report (production mode - without ground truth)
+    python scripts/report_cfm.py \
+        --predictions results/cfm/predictions.csv \
         --output results/cfm/report.md
 """
 
@@ -43,6 +47,44 @@ ANOMALY_TYPES_KR = {
 }
 
 
+def calculate_overall_metrics(df: pd.DataFrame) -> Dict:
+    """Calculate overall performance metrics from predictions.
+
+    Args:
+        df: Predictions dataframe with ensemble_anomaly and optionally is_anomaly
+
+    Returns:
+        Dictionary with metrics (None if no ground truth)
+    """
+    if "is_anomaly" not in df.columns:
+        return None
+
+    y_true = df["is_anomaly"].values
+    y_pred = df["ensemble_anomaly"].values
+
+    tp = ((y_true == True) & (y_pred == True)).sum()
+    fp = ((y_true == False) & (y_pred == True)).sum()
+    tn = ((y_true == False) & (y_pred == False)).sum()
+    fn = ((y_true == True) & (y_pred == False)).sum()
+
+    accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0.0
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    return {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1_score": f1,
+        "true_positives": int(tp),
+        "false_positives": int(fp),
+        "true_negatives": int(tn),
+        "false_negatives": int(fn),
+        "total_evaluated": len(df),
+    }
+
+
 def analyze_per_metric_performance(df: pd.DataFrame) -> Dict[str, Dict]:
     """Analyze performance per CFM metric.
 
@@ -50,8 +92,11 @@ def analyze_per_metric_performance(df: pd.DataFrame) -> Dict[str, Dict]:
         df: Predictions dataframe
 
     Returns:
-        Dictionary of metric-level performance
+        Dictionary of metric-level performance (None if no ground truth)
     """
+    if "is_anomaly" not in df.columns:
+        return None
+
     results = {}
 
     # Filter to records with predictions
@@ -93,8 +138,11 @@ def analyze_per_anomaly_type(df: pd.DataFrame) -> Dict[str, Dict]:
         df: Predictions dataframe
 
     Returns:
-        Dictionary of anomaly-type-level performance
+        Dictionary of anomaly-type-level performance (None if no ground truth or anomaly_type)
     """
+    if "is_anomaly" not in df.columns or "anomaly_type" not in df.columns:
+        return None
+
     results = {}
 
     # Filter to records with predictions
@@ -134,23 +182,21 @@ def analyze_per_anomaly_type(df: pd.DataFrame) -> Dict[str, Dict]:
 
 def generate_markdown_report(
     predictions_df: pd.DataFrame,
-    metrics_df: pd.DataFrame,
     output_path: Path,
 ) -> None:
     """Generate markdown report.
 
     Args:
         predictions_df: Predictions dataframe
-        metrics_df: Metrics dataframe
         output_path: Output file path
     """
-    # Analyze data
+    # Check if validation mode
+    has_ground_truth = "is_anomaly" in predictions_df.columns
+
+    # Calculate metrics
+    overall = calculate_overall_metrics(predictions_df)
     per_metric_perf = analyze_per_metric_performance(predictions_df)
     per_anomaly_perf = analyze_per_anomaly_type(predictions_df)
-
-    # Get overall metrics
-    overall_rows = metrics_df[metrics_df["dataset"] == "combined"]
-    overall = overall_rows.iloc[0].to_dict() if len(overall_rows) > 0 else None
 
     # Start building report
     lines = []
@@ -163,10 +209,10 @@ def generate_markdown_report(
     lines.append("## 요약")
     lines.append("")
     if overall is not None:
-        lines.append(f"TCN(Temporal Convolutional Network) 탐지기를 사용한 CFM 지연 이상 탐지 결과, "
+        lines.append(f"Isolation Forest 탐지기를 사용한 CFM 지연 이상 탐지 결과, "
                     f"**정확도 {overall['accuracy']*100:.1f}%**, **F1-score {overall['f1_score']*100:.1f}%**를 달성했습니다.")
     else:
-        lines.append("TCN(Temporal Convolutional Network) 탐지기를 사용한 CFM 지연 이상 탐지를 수행했습니다.")
+        lines.append("Isolation Forest 탐지기를 사용한 CFM 지연 이상 탐지를 수행했습니다.")
     lines.append("")
 
     # Dataset info
@@ -174,25 +220,32 @@ def generate_markdown_report(
     lines.append("")
 
     n_total = len(predictions_df)
-    n_anomaly = predictions_df["is_anomaly"].sum()
-    n_normal = n_total - n_anomaly
+    n_predicted_anomaly = predictions_df["ensemble_anomaly"].sum() if "ensemble_anomaly" in predictions_df.columns else 0
 
     lines.append(f"- **전체 샘플**: {n_total:,}개")
-    lines.append(f"- **정상 샘플**: {n_normal:,}개 ({n_normal/n_total*100:.1f}%)")
-    lines.append(f"- **비정상 샘플**: {n_anomaly:,}개 ({n_anomaly/n_total*100:.1f}%)")
+    lines.append(f"- **예측된 이상**: {n_predicted_anomaly:,}개 ({n_predicted_anomaly/n_total*100:.1f}%)")
+
+    if has_ground_truth:
+        n_anomaly = predictions_df["is_anomaly"].sum()
+        n_normal = n_total - n_anomaly
+        lines.append(f"- **실제 정상 샘플**: {n_normal:,}개 ({n_normal/n_total*100:.1f}%)")
+        lines.append(f"- **실제 비정상 샘플**: {n_anomaly:,}개 ({n_anomaly/n_total*100:.1f}%)")
+
     lines.append("")
 
-    # Anomaly type distribution
-    if n_anomaly > 0:
-        lines.append("### 이상 유형 분포")
-        lines.append("")
-        anomaly_dist = predictions_df[predictions_df["is_anomaly"]]["anomaly_type"].value_counts()
-        for anom_type, count in anomaly_dist.items():
-            if anom_type == "normal":
-                continue
-            type_kr = ANOMALY_TYPES_KR.get(anom_type, anom_type)
-            lines.append(f"- **{type_kr}**: {count:,}개 ({count/n_anomaly*100:.1f}%)")
-        lines.append("")
+    # Anomaly type distribution (only if available)
+    if has_ground_truth and "anomaly_type" in predictions_df.columns:
+        n_anomaly = predictions_df["is_anomaly"].sum()
+        if n_anomaly > 0:
+            lines.append("### 이상 유형 분포")
+            lines.append("")
+            anomaly_dist = predictions_df[predictions_df["is_anomaly"]]["anomaly_type"].value_counts()
+            for anom_type, count in anomaly_dist.items():
+                if anom_type == "normal":
+                    continue
+                type_kr = ANOMALY_TYPES_KR.get(anom_type, anom_type)
+                lines.append(f"- **{type_kr}**: {count:,}개 ({count/n_anomaly*100:.1f}%)")
+            lines.append("")
 
     # Overall performance
     lines.append("## 전체 성능 지표")
@@ -214,23 +267,24 @@ def generate_markdown_report(
         lines.append(f"| **실제: 이상** | {overall['false_negatives']:,} (FN) | {overall['true_positives']:,} (TP) |")
         lines.append("")
 
-    # Per-metric performance
-    lines.append("## 메트릭별 탐지 성능")
-    lines.append("")
-    lines.append("각 CFM 메트릭별로 독립적으로 학습된 TCN 모델의 성능입니다.")
-    lines.append("")
+    # Per-metric performance (only if ground truth available)
+    if per_metric_perf is not None:
+        lines.append("## 메트릭별 탐지 성능")
+        lines.append("")
+        lines.append("각 CFM 메트릭별로 독립적으로 학습된 Isolation Forest 모델의 성능입니다.")
+        lines.append("")
 
-    lines.append("| 메트릭 | 정밀도 (Precision) | 재현율 (Recall) | F1-Score |")
-    lines.append("|--------|-------------------|----------------|----------|")
+        lines.append("| 메트릭 | 정밀도 (Precision) | 재현율 (Recall) | F1-Score |")
+        lines.append("|--------|-------------------|----------------|----------|")
 
-    for metric, perf in per_metric_perf.items():
-        metric_name = METRIC_NAMES_KR.get(metric, metric)
-        lines.append(f"| {metric_name} | {perf['precision']*100:.2f}% | {perf['recall']*100:.2f}% | {perf['f1_score']*100:.2f}% |")
+        for metric, perf in per_metric_perf.items():
+            metric_name = METRIC_NAMES_KR.get(metric, metric)
+            lines.append(f"| {metric_name} | {perf['precision']*100:.2f}% | {perf['recall']*100:.2f}% | {perf['f1_score']*100:.2f}% |")
 
-    lines.append("")
+        lines.append("")
 
-    # Per-anomaly-type performance
-    if per_anomaly_perf:
+    # Per-anomaly-type performance (only if available)
+    if per_anomaly_perf is not None:
         lines.append("## 이상 유형별 탐지 성능")
         lines.append("")
         lines.append("각 이상 유형별로 얼마나 잘 탐지했는지 분석한 결과입니다.")
@@ -245,28 +299,31 @@ def generate_markdown_report(
 
         lines.append("")
 
-    # Interpretation
-    lines.append("## 결과 해석")
-    lines.append("")
-    lines.append("### CFM 프로토콜 특화 분석")
-    lines.append("")
+    # Interpretation (only if ground truth available)
+    if overall is not None:
+        lines.append("## 결과 해석")
+        lines.append("")
+        lines.append("### CFM 프로토콜 특화 분석")
+        lines.append("")
 
-    if overall is not None and overall['f1_score'] > 0.8:
-        lines.append("✅ **우수한 성능**: TCN 모델이 CFM 메트릭의 시계열 패턴을 효과적으로 학습하여 "
-                    "높은 이상 탐지 성능을 보였습니다.")
-    elif overall is not None and overall['f1_score'] > 0.6:
-        lines.append("⚠️ **양호한 성능**: TCN 모델이 대부분의 CFM 이상을 탐지했지만, "
-                    "일부 개선의 여지가 있습니다.")
-    else:
-        lines.append("❌ **개선 필요**: TCN 모델의 성능이 기대에 미치지 못합니다. "
-                    "하이퍼파라미터 조정이나 더 많은 학습 데이터가 필요할 수 있습니다.")
+        if overall['f1_score'] > 0.8:
+            lines.append("✅ **우수한 성능**: Isolation Forest 모델이 CFM 메트릭의 패턴을 효과적으로 학습하여 "
+                        "높은 이상 탐지 성능을 보였습니다.")
+        elif overall['f1_score'] > 0.6:
+            lines.append("⚠️ **양호한 성능**: Isolation Forest 모델이 대부분의 CFM 이상을 탐지했지만, "
+                        "일부 개선의 여지가 있습니다.")
+        else:
+            lines.append("❌ **개선 필요**: Isolation Forest 모델의 성능이 기대에 미치지 못합니다. "
+                        "하이퍼파라미터 조정이나 더 많은 학습 데이터가 필요할 수 있습니다.")
 
-    lines.append("")
-    lines.append("### 메트릭별 분석")
-    lines.append("")
+        lines.append("")
 
-    # Find best and worst metrics
-    if per_metric_perf:
+    # Metric analysis (only if available)
+    if per_metric_perf is not None and len(per_metric_perf) > 0:
+        lines.append("### 메트릭별 분석")
+        lines.append("")
+
+        # Find best and worst metrics
         metrics_sorted = sorted(per_metric_perf.items(), key=lambda x: x[1]['f1_score'], reverse=True)
         best_metric = metrics_sorted[0]
         worst_metric = metrics_sorted[-1]
@@ -364,16 +421,9 @@ def main():
 
     parser.add_argument(
         "--predictions",
-        type=str,
+        type=Path,
         required=True,
-        help="Path to predictions CSV file (supports wildcards)",
-    )
-
-    parser.add_argument(
-        "--metrics",
-        type=str,
-        required=True,
-        help="Path to metrics CSV file (supports wildcards)",
+        help="Path to predictions CSV file",
     )
 
     parser.add_argument(
@@ -389,31 +439,27 @@ def main():
     print("CFM 성능 리포트 생성")
     print("="*70)
 
-    # Find files
-    predictions_files = glob.glob(args.predictions)
-    metrics_files = glob.glob(args.metrics)
-
-    if not predictions_files:
-        print(f"❌ No prediction files found: {args.predictions}")
+    # Validate paths
+    if not args.predictions.exists():
+        print(f"❌ Predictions file not found: {args.predictions}")
         return 1
 
-    if not metrics_files:
-        print(f"❌ No metrics files found: {args.metrics}")
-        return 1
-
-    print(f"\nPredictions file: {predictions_files[0]}")
-    print(f"Metrics file: {metrics_files[0]}")
+    print(f"\nPredictions file: {args.predictions}")
 
     # Load data
-    predictions_df = pd.read_csv(predictions_files[0])
-    metrics_df = pd.read_csv(metrics_files[0])
+    predictions_df = pd.read_csv(args.predictions)
+    print(f"Loaded {len(predictions_df):,} predictions")
 
-    print(f"\nLoaded {len(predictions_df):,} predictions")
-    print(f"Loaded {len(metrics_df)} metric rows")
+    # Check if validation mode
+    has_ground_truth = "is_anomaly" in predictions_df.columns
+    if has_ground_truth:
+        print(f"✅ Validation mode: Ground truth available")
+    else:
+        print(f"ℹ️  Production mode: No ground truth")
 
     # Generate report
     print(f"\n리포트 생성 중...")
-    generate_markdown_report(predictions_df, metrics_df, args.output)
+    generate_markdown_report(predictions_df, args.output)
 
     print(f"\n{'='*70}")
     print("✅ 리포트 생성 완료!")

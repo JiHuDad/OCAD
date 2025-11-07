@@ -184,24 +184,69 @@ case $PROTOCOL in
         ;;
 
     cfm)
-        MODEL_FILE="$OUTPUT_DIR/model.pkl"
+        # CFM creates multiple model files (one per metric)
+        MODEL_FILE="$OUTPUT_DIR"  # Directory, not single file
         log_info "Training CFM Isolation Forest model..."
+
+        # Find training data file (parquet or csv)
+        if [ -f "$DATA_DIR" ]; then
+            # DATA_DIR is a file
+            TRAIN_DATA_FILE="$DATA_DIR"
+        elif [ -d "$DATA_DIR" ]; then
+            # DATA_DIR is a directory, find first parquet file
+            TRAIN_DATA_FILE=$(find "$DATA_DIR" -maxdepth 1 -name "*.parquet" | head -1)
+            if [ -z "$TRAIN_DATA_FILE" ]; then
+                # No parquet, try csv
+                TRAIN_DATA_FILE=$(find "$DATA_DIR" -maxdepth 1 -name "*.csv" | head -1)
+            fi
+            if [ -z "$TRAIN_DATA_FILE" ]; then
+                log_error "No training data file (.parquet or .csv) found in $DATA_DIR"
+                exit 1
+            fi
+        else
+            log_error "Training data not found: $DATA_DIR"
+            exit 1
+        fi
+
+        log_info "Using training data: $TRAIN_DATA_FILE"
         python "$SCRIPT_DIR/train_cfm_isoforest.py" \
-            --data "$DATA_DIR" \
-            --output "$MODEL_FILE"
+            --train-data "$TRAIN_DATA_FILE" \
+            --output-dir "$OUTPUT_DIR"
         ;;
 esac
 
 # Check if training was successful
-if [ $? -eq 0 ] && [ -f "$MODEL_FILE" ]; then
-    echo ""
-    log_success "Training completed successfully!"
-    log_success "Model saved to: $MODEL_FILE"
+if [ $? -eq 0 ]; then
+    # For CFM, check if any .pkl files were created
+    if [ "$PROTOCOL" = "cfm" ]; then
+        MODEL_COUNT=$(find "$OUTPUT_DIR" -maxdepth 1 -name "*.pkl" | wc -l)
+        if [ "$MODEL_COUNT" -gt 0 ]; then
+            echo ""
+            log_success "Training completed successfully!"
+            log_success "Models saved to: $OUTPUT_DIR"
+            echo ""
+            log_info "Model files:"
+            ls -lh "$OUTPUT_DIR"/*.pkl
+        else
+            echo ""
+            log_error "Training failed - no model files created!"
+            exit 1
+        fi
+    # For other protocols, check single model file
+    elif [ -f "$MODEL_FILE" ]; then
+        echo ""
+        log_success "Training completed successfully!"
+        log_success "Model saved to: $MODEL_FILE"
 
-    # Show model info
-    echo ""
-    log_info "Model information:"
-    ls -lh "$MODEL_FILE"
+        # Show model info
+        echo ""
+        log_info "Model information:"
+        ls -lh "$MODEL_FILE"
+    else
+        echo ""
+        log_error "Training failed - model file not created!"
+        exit 1
+    fi
 
     # Create metadata file
     METADATA_FILE="$OUTPUT_DIR/metadata.json"

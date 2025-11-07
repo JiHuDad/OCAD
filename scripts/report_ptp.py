@@ -123,10 +123,11 @@ def calculate_metrics(df: pd.DataFrame) -> dict:
     return metrics
 
 
-def generate_markdown_report(metrics: dict, output_path: Path) -> None:
+def generate_markdown_report(df: pd.DataFrame, metrics: dict, output_path: Path) -> None:
     """Generate Markdown report.
 
     Args:
+        df: Predictions DataFrame
         metrics: Metrics dictionary
         output_path: Output path for report
     """
@@ -445,7 +446,7 @@ def main():
 
     # Generate Markdown report
     print("\nGenerating Markdown report...")
-    generate_markdown_report(metrics, args.output)
+    generate_markdown_report(df, metrics, args.output)
 
     # Generate HTML report
     html_path = args.output.with_suffix(".html")

@@ -150,7 +150,7 @@ python scripts/generate_training_inference_data.py --mode inference
 
 #### Option B: 실제 데이터 수집
 
-CFM 담당자가 ORAN 장비에서 수집:
+프로토콜 담당자가 네트워크 장비에서 수집 (CFM 예시):
 
 1. **메트릭 수집** (NETCONF/YANG)
    ```bash

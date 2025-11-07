@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-**프로젝트 현황**: OCAD 시스템은 기본 아키텍처가 완성되어 있으며, 핵심 파이프라인(수집 → 피처 엔지니어링 → 탐지 → 알람)이 정상 동작합니다. 실제 ORAN 장비 없이도 시뮬레이터를 통한 완전한 검증이 가능합니다.
+**프로젝트 현황**: OCAD 시스템은 기본 아키텍처가 완성되어 있으며, 핵심 파이프라인(수집 → 피처 엔지니어링 → 탐지 → 알람)이 정상 동작합니다. 실제 네트워크 장비 없이도 시뮬레이터를 통한 완전한 검증이 가능합니다.
 
 **최근 작업** (2025-10-30):
 
@@ -156,15 +156,15 @@ When running Python commands, scripts, or tests, ensure the virtual environment 
 
 ## Project Overview
 
-OCAD (ORAN CFM-Lite AI Anomaly Detection System) is a hybrid anomaly detection system for ORAN networks that uses reduced CFM functionality. It provides capability-driven monitoring with rule-based, changepoint (CUSUM/PELT), prediction-residual (TCN/LSTM), and multivariate detection methods.
+OCAD (Network Protocol AI Anomaly Detection System) is a plugin-based anomaly detection system that monitors various network protocols including BFD, BGP, PTP, and CFM. It provides capability-driven monitoring with rule-based, changepoint (CUSUM/PELT), prediction-residual (TCN/LSTM), and multivariate detection methods.
 
-**프로토콜 확장 (2025-11-05)**: OCAD는 CFM을 넘어 BFD, BGP, PTP 등 다양한 네트워크 프로토콜로 확장 중입니다. **플러그인 기반 아키텍처**를 통해 각 프로토콜별 특성에 맞는 AI 모델을 독립적으로 적용할 수 있습니다. 상세 계획은 [PROTOCOL-ANOMALY-DETECTION-PLAN.md](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md)를 참조하세요.
+**프로토콜 확장 (2025-11-05)**: OCAD는 **플러그인 기반 아키텍처**를 통해 다양한 네트워크 프로토콜(BFD, BGP, PTP, CFM 등)을 지원하며, 각 프로토콜별 특성에 맞는 AI 모델을 독립적으로 적용할 수 있습니다. 상세 계획은 [PROTOCOL-ANOMALY-DETECTION-PLAN.md](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md)를 참조하세요.
 
 ## Architecture
 
 The system follows a pipeline architecture:
 ```
-O-RU/O-DU → Capability Detector → Collectors → Feature Engine → Detectors → Alerts
+Network Equipment → Protocol Adapters → Collectors → Feature Engine → Detectors → Alerts
 ```
 
 ### Core Components

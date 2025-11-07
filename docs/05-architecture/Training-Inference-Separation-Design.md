@@ -122,7 +122,7 @@ class MultivariateDetector:
 [1. 데이터 수집]                   [1. 모델 로딩]
     ↓                                  ↓
 Historical Data                    Trained Models
-  - Real ORAN Logs                   - tcn_udp_echo.pth
+  - Real Network Logs                - tcn_udp_echo.pth
   - Simulated Data                   - tcn_ecpri.pth
   - Injected Anomalies               - tcn_lbm.pth
     ↓                                 - isolation_forest.pkl
@@ -488,7 +488,7 @@ class ResidualDetector(BaseDetector):
 ```
 
 **수집 방법**:
-1. **실제 ORAN 네트워크 로그** (최우선)
+1. **실제 네트워크 로그** (최우선)
    - 정상 운영 데이터: 80%
    - 실제 장애 데이터: 20%
 

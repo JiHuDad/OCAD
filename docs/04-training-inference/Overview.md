@@ -158,7 +158,7 @@ print(f'Accuracy: {(df[\"label\"] == df[\"predicted_label\"]).mean() * 100:.2f}%
 
 ```bash
 # Step 1: 정상 데이터 수집 (실제 환경)
-# - CFM 담당자가 ORAN 장비에서 수집
+# - 프로토콜 담당자가 네트워크 장비에서 수집
 # - 또는 scripts/generate_training_inference_data.py로 생성
 
 # Step 2: 모델 학습
@@ -333,7 +333,7 @@ python scripts/run_inference.py \
 ### Q1: 학습은 몇 번 해야 하나요?
 
 **A**: 일반적으로 최초 1회만 하면 됩니다. 다만 다음 경우 재학습:
-- ORAN 장비 추가/변경
+- 네트워크 장비 추가/변경
 - 정상 패턴 변화 (예: 네트워크 업그레이드)
 - 성능 개선 필요
 

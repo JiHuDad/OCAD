@@ -4,7 +4,7 @@
 
 # Protocol Adapters
 protocol_adapters:
-  # CFM Protocol (ORAN - Currently Implemented)
+  # CFM Protocol (Ethernet Layer 2 - Currently Implemented)
   cfm:
     enabled: true
     config:

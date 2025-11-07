@@ -12,7 +12,7 @@
 ### 현재 (OCAD)
 - **단일 프로토콜**: CFM (Connectivity Fault Management) 전용
 - **고정 메트릭**: UDP Echo, eCPRI, LBM, CCM
-- **특화 시스템**: ORAN 네트워크 환경
+- **특화 시스템**: 초기 CFM 중심 설계
 
 ### 목표 (PADIT)
 - **다중 프로토콜**: CFM, BFD, BGP, PTP, 기타 커스텀 프로토콜

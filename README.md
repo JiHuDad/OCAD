@@ -1,6 +1,6 @@
-# ORAN CFM-Lite AI Anomaly Detection System
+# 네트워크 프로토콜 AI 이상 탐지 시스템 (OCAD)
 
-ORAN 환경에서 다양한 네트워크 프로토콜의 이상을 탐지하는 **플러그인 기반** AI 시스템입니다.
+다양한 네트워크 프로토콜(BFD, BGP, PTP, CFM 등)의 이상을 탐지하는 **플러그인 기반** AI 시스템입니다.
 
 ## 🌟 주요 특징
 

@@ -55,11 +55,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ✅ 데이터 디렉토리 구조 정리 (ocad/data → data/)
 - ✅ 리팩토링 문서 업데이트 및 Quick Start Guide 작성
 
+**최근 작업** (2025-11-05):
+
+- ✅ 프로토콜 확장 계획 수립
+  - BFD, BGP, PTP 등 다양한 프로토콜 이상 탐지 확장 계획
+  - 프로토콜별 특성 분석 및 AI 모델 매칭 (LSTM, GNN, HMM, Autoencoder)
+  - 플러그인 기반 아키텍처 설계 (ProtocolAdapter, DetectorPlugin 인터페이스)
+  - 구현 로드맵 수립 (Phase 0-4, 12주 계획)
+- ✅ 문서 작성
+  - [PROTOCOL-ANOMALY-DETECTION-PLAN.md](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md) - 프로토콜 확장 계획
+- ✅ **Phase 0 완료**: 플러그인 인프라 구축
+  - `ocad/plugins/base.py`: ProtocolAdapter, DetectorPlugin 인터페이스
+  - `ocad/plugins/registry.py`: PluginRegistry 동적 로딩
+  - `ocad/plugins/protocol_adapters/cfm/`: CFM 어댑터 예제
+  - `ocad/cli.py`: list-plugins, plugin-info CLI 명령어 추가
+  - `config/plugins.example.yaml`: 플러그인 설정 템플릿
+- ✅ **Phase 1 완료**: BFD 프로토콜 지원
+  - `ocad/plugins/protocol_adapters/bfd/`: BFD 어댑터 구현
+    - 7가지 메트릭 수집 (session_state, detection_time, echo_interval, remote_state, diagnostic_code, multiplier, flap_count)
+    - 플래핑(Flapping) 탐지 기능
+    - 정상 동작 시뮬레이션 및 이상 상황 시뮬레이션
+  - `ocad/plugins/detectors/lstm/`: LSTM 탐지기 구현 (PyTorch 기반)
+    - 시퀀스 기반 이상 탐지 (BFD 상태 전이, BGP, CFM, PTP 지원)
+    - 시계열 예측 모델 (Autoregressive)
+  - `ocad/plugins/detectors/hmm/`: HMM 탐지기 구현
+    - 상태 기반 이상 탐지 (BFD, BGP 지원)
+    - SimpleGaussianHMM 폴백 구현 (hmmlearn 없이도 동작)
+  - `scripts/generate_bfd_data.py`: BFD 학습 데이터 생성 스크립트
+  - 테스트 스크립트: 100% 통과 (BFD 어댑터, HMM 탐지기)
+- ✅ **Phase 4 완료**: 통합 및 문서화 (2025-11-05)
+  - **통합 테스트**: `scripts/test_all_plugins.py` (프로토콜 어댑터 + 탐지기 + 크로스 프로토콜 + 성능 테스트)
+  - **CLI 확장**: `ocad/cli.py`
+    - 기존: `list-plugins`, `plugin-info`
+    - 신규: `enable-plugin`, `disable-plugin`, `test-plugin`, `train-detector`, `detect` (실시간 탐지)
+  - **통합 설정**: `config/plugins.yaml` (모든 프로토콜 어댑터 및 탐지기 설정 통합)
+  - **종합 문서 작성** (4개 문서):
+    1. [Plugin-User-Guide.md](docs/06-plugins/Plugin-User-Guide.md) - 플러그인 사용 가이드 (15-20분)
+    2. [Plugin-Development-Guide.md](docs/07-development/Plugin-Development-Guide.md) - 플러그인 개발 가이드 (30-45분)
+    3. [Plugin-Architecture.md](docs/05-architecture/Plugin-Architecture.md) - 플러그인 아키텍처 설계 문서
+    4. [Plugin-Tutorial.md](docs/02-user-guides/Plugin-Tutorial.md) - 5분 빠른 시작 튜토리얼
+  - **README.md 업데이트**: 플러그인 시스템 섹션 추가 (지원 프로토콜 표, 빠른 시작 명령어, 문서 링크)
+  - **CLAUDE.md 업데이트**: Phase 4 완료 기록
+
 **다음 단계**:
-1. **Phase 3**: Isolation Forest 다변량 이상 탐지 모델 학습 (내일, 1-2시간)
-2. **Phase 4**: 학습된 모델을 추론 파이프라인에 통합 (2-3시간)
-3. CFM 담당자 협의 → 실제 데이터 수집 가능 여부 확인
-4. 실시간 스트리밍 데이터 소스 구현 (StreamingDataSource - Kafka/WebSocket)
+1. ✅ **Phase 0 (Week 1-2)**: 플러그인 인프라 구축 완료!
+2. ✅ **Phase 1 (Week 3-4)**: BFD 프로토콜 지원 완료!
+3. **Phase 2 (Week 5-8)**: BGP 프로토콜 지원 (GNN 모델) - 어댑터 및 GNN 탐지기 구현
+4. **Phase 3 (Week 9-10)**: PTP 프로토콜 지원 (TCN 재사용) - 어댑터 및 TCN 탐지기 통합
+5. ✅ **Phase 4 (Week 11-12)**: 통합 및 문서화 완료!
+6. CFM 담당자 협의 → 실제 데이터 수집 가능 여부 확인
 
 ## Communication Rules
 
@@ -78,6 +122,8 @@ When running Python commands, scripts, or tests, ensure the virtual environment 
 ## Project Overview
 
 OCAD (ORAN CFM-Lite AI Anomaly Detection System) is a hybrid anomaly detection system for ORAN networks that uses reduced CFM functionality. It provides capability-driven monitoring with rule-based, changepoint (CUSUM/PELT), prediction-residual (TCN/LSTM), and multivariate detection methods.
+
+**프로토콜 확장 (2025-11-05)**: OCAD는 CFM을 넘어 BFD, BGP, PTP 등 다양한 네트워크 프로토콜로 확장 중입니다. **플러그인 기반 아키텍처**를 통해 각 프로토콜별 특성에 맞는 AI 모델을 독립적으로 적용할 수 있습니다. 상세 계획은 [PROTOCOL-ANOMALY-DETECTION-PLAN.md](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md)를 참조하세요.
 
 ## Architecture
 

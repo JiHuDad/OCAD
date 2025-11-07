@@ -40,6 +40,7 @@ OCAD 아키텍처와 설계를 이해하시려면:
 1. [시스템 아키텍처](05-architecture/System-Architecture.md) - 전체 아키텍처 (향후 작성)
 2. [학습-추론 분리 설계](05-architecture/Training-Inference-Separation-Design.md) - 온라인/오프라인 분리
 3. [데이터 소스 추상화](05-architecture/Data-Source-Abstraction-Design.md) - 파일/스트리밍 지원
+4. 🆕 [프로토콜 확장 계획](PROTOCOL-ANOMALY-DETECTION-PLAN.md) - BFD, BGP, PTP 플러그인 아키텍처
 
 ---
 
@@ -76,6 +77,7 @@ OCAD 아키텍처와 설계를 이해하시려면:
 - [System-Architecture.md](05-architecture/System-Architecture.md) - 시스템 아키텍처 (향후 작성)
 - [Training-Inference-Separation-Design.md](05-architecture/Training-Inference-Separation-Design.md) - 학습-추론 분리 설계
 - [Data-Source-Abstraction-Design.md](05-architecture/Data-Source-Abstraction-Design.md) - 데이터 소스 추상화
+- 🆕 [PROTOCOL-ANOMALY-DETECTION-PLAN.md](PROTOCOL-ANOMALY-DETECTION-PLAN.md) - 프로토콜 확장 계획 (BFD, BGP, PTP)
 
 ### 06-development/ (개발)
 - [Contributing.md](06-development/Contributing.md) - 기여 가이드 (향후 작성)

@@ -8,11 +8,50 @@ ORAN 환경에서 축소된 CFM 기능을 활용한 하이브리드 이상탐지
 - **하이브리드 탐지**: 룰 + 변화점(CUSUM/PELT) + 예측-잔차(TCN/LSTM) + 다변량(옵션)
 - **조기 경보**: 끊기기 전 징조를 4분 이상 앞서 탐지 (목표)
 - **최소 신호**: UDP-echo, eCPRI delay, LBM만으로도 효과적 탐지
+- **🆕 플러그인 아키텍처**: BFD, BGP, PTP 등 다양한 프로토콜 확장 가능 ([계획서](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md))
+
+## 🔌 플러그인 시스템 (NEW!)
+
+OCAD는 **플러그인 아키텍처**를 통해 다양한 네트워크 프로토콜로 확장 가능합니다:
+
+### 지원 프로토콜
+
+| 프로토콜 | 설명 | 상태 | 권장 탐지기 |
+|---------|------|------|------------|
+| **CFM** | UDP Echo, eCPRI, LBM, CCM | ✅ 완료 | LSTM, TCN |
+| **BFD** | 세션 모니터링, 플래핑 탐지 | ✅ 완료 | LSTM, HMM |
+| **BGP** | AS-path 분석, hijacking 탐지 | ⏳ Phase 2 | GNN, HMM |
+| **PTP** | 시간 동기화 모니터링 | ⏳ Phase 3 | TCN, LSTM |
+
+### 빠른 시작 (5분)
+
+```bash
+# 1. 사용 가능한 플러그인 확인
+python -m ocad.cli list-plugins
+
+# 2. BFD 모니터링 활성화
+python -m ocad.cli enable-plugin bfd
+python -m ocad.cli enable-plugin lstm
+
+# 3. 실시간 이상 탐지 (60초)
+python -m ocad.cli detect bfd --endpoint 192.168.1.1 --duration 60
+```
+
+### 상세 문서
+
+- **5분 튜토리얼**: [Plugin-Tutorial.md](docs/02-user-guides/Plugin-Tutorial.md)
+- **사용자 가이드**: [Plugin-User-Guide.md](docs/06-plugins/Plugin-User-Guide.md)
+- **개발 가이드**: [Plugin-Development-Guide.md](docs/07-development/Plugin-Development-Guide.md)
+- **아키텍처**: [Plugin-Architecture.md](docs/05-architecture/Plugin-Architecture.md)
+- **프로토콜 확장 계획**: [PROTOCOL-ANOMALY-DETECTION-PLAN.md](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md)
 
 ## 시스템 구조
 
 ```
 O-RU/O-DU → Capability Detector → Collectors → Feature Engine → Detectors → Alerts
+             ↓ Plugin System
+        Protocol Adapters (CFM, BFD, BGP, PTP)
+        Detector Plugins (LSTM, HMM, GNN, TCN)
 ```
 
 ## 🤖 학습 및 추론 워크플로우

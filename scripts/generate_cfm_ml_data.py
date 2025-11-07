@@ -21,14 +21,14 @@ Anomaly scenarios:
 - Sustained degradation: Gradual performance decline
 
 Usage:
-    # Generate 1 hour training + validation data from 10 endpoints
-    python scripts/generate_cfm_ml_data.py --endpoints 10 --duration-hours 1 --output data/cfm
+    # Generate training + validation data from 10 endpoints
+    python scripts/generate_cfm_ml_data.py --endpoints 10 --train-hours 2.0 --val-hours 0.5 --output data/cfm
 
-    # Quick test (5 minutes)
-    python scripts/generate_cfm_ml_data.py --endpoints 3 --duration-minutes 5 --anomaly-rate 0.3
+    # Quick test (5 minutes train, 2 minutes validation)
+    python scripts/generate_cfm_ml_data.py --endpoints 3 --train-hours 0.083 --val-hours 0.033 --anomaly-rate 0.3
 
-    # Large dataset (24 hours, 50 endpoints)
-    python scripts/generate_cfm_ml_data.py --endpoints 50 --duration-hours 24
+    # Large dataset (24 hours train, 2 hours validation, 50 endpoints)
+    python scripts/generate_cfm_ml_data.py --endpoints 50 --train-hours 24 --val-hours 2.0
 """
 
 import argparse
@@ -267,22 +267,18 @@ def main():
         help="Number of endpoints to simulate (default: 10)",
     )
 
-    duration_group = parser.add_mutually_exclusive_group()
-    duration_group.add_argument(
-        "--duration-hours",
+    parser.add_argument(
+        "--train-hours",
         type=float,
-        help="Duration in hours",
+        default=2.0,
+        help="Training data duration in hours (default: 2.0)",
     )
-    duration_group.add_argument(
-        "--duration-minutes",
+
+    parser.add_argument(
+        "--val-hours",
         type=float,
-        help="Duration in minutes",
-    )
-    duration_group.add_argument(
-        "--duration-seconds",
-        type=int,
-        default=3600,
-        help="Duration in seconds (default: 3600 = 1 hour)",
+        default=0.5,
+        help="Validation data duration in hours (default: 0.5)",
     )
 
     parser.add_argument(
@@ -320,19 +316,17 @@ def main():
         np.random.seed(args.seed)
         print(f"Random seed: {args.seed}")
 
-    # Calculate duration
-    if args.duration_hours:
-        duration_seconds = int(args.duration_hours * 3600)
-    elif args.duration_minutes:
-        duration_seconds = int(args.duration_minutes * 60)
-    else:
-        duration_seconds = args.duration_seconds
+    # Calculate durations
+    train_seconds = int(args.train_hours * 3600)
+    val_seconds = int(args.val_hours * 3600)
 
     # Validate parameters
     if args.endpoints <= 0:
         parser.error("--endpoints must be positive")
-    if duration_seconds <= 0:
-        parser.error("Duration must be positive")
+    if args.train_hours <= 0:
+        parser.error("--train-hours must be positive")
+    if args.val_hours <= 0:
+        parser.error("--val-hours must be positive")
     if args.collection_interval <= 0:
         parser.error("--collection-interval must be positive")
     if not (0.0 <= args.anomaly_rate <= 1.0):
@@ -341,6 +335,12 @@ def main():
     print("="*70)
     print("CFM ML Data Generation")
     print("="*70)
+    print(f"Configuration:")
+    print(f"  Endpoints: {args.endpoints}")
+    print(f"  Training duration: {args.train_hours}h")
+    print(f"  Validation duration: {args.val_hours}h")
+    print(f"  Collection interval: {args.collection_interval}s")
+    print(f"  Anomaly rate (val_anomaly): {args.anomaly_rate * 100:.1f}%")
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -349,7 +349,7 @@ def main():
     print("-"*70)
     train_df = generate_dataset(
         n_endpoints=args.endpoints,
-        duration_seconds=duration_seconds,
+        duration_seconds=train_seconds,
         collection_interval=args.collection_interval,
         anomaly_rate=0.0,  # No anomalies in training data
         dataset_name="train",
@@ -372,7 +372,7 @@ def main():
     print("-"*70)
     val_normal_df = generate_dataset(
         n_endpoints=args.endpoints,
-        duration_seconds=duration_seconds // 2,  # Half duration for validation
+        duration_seconds=val_seconds,
         collection_interval=args.collection_interval,
         anomaly_rate=0.0,  # Normal only
         dataset_name="val_normal",
@@ -395,7 +395,7 @@ def main():
     print("-"*70)
     val_anomaly_df = generate_dataset(
         n_endpoints=args.endpoints,
-        duration_seconds=duration_seconds // 2,  # Half duration for validation
+        duration_seconds=val_seconds,
         collection_interval=args.collection_interval,
         anomaly_rate=args.anomaly_rate,  # User-specified anomaly rate
         dataset_name="val_anomaly",
@@ -421,7 +421,8 @@ def main():
         f.write(f"Generated: {datetime.now()}\n\n")
         f.write(f"Configuration:\n")
         f.write(f"  Endpoints: {args.endpoints}\n")
-        f.write(f"  Duration: {duration_seconds // 3600}h {(duration_seconds % 3600) // 60}m\n")
+        f.write(f"  Training duration: {train_seconds // 3600}h {(train_seconds % 3600) // 60}m\n")
+        f.write(f"  Validation duration: {val_seconds // 3600}h {(val_seconds % 3600) // 60}m\n")
         f.write(f"  Collection interval: {args.collection_interval}s\n")
         f.write(f"  Validation anomaly rate: {args.anomaly_rate * 100:.1f}%\n\n")
         f.write(f"Datasets:\n")

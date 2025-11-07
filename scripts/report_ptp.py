@@ -254,20 +254,38 @@ def generate_markdown_report(metrics: dict, output_path: Path) -> None:
             else:
                 f.write(f"TCN 모델은 PTP 이상 탐지에서 **개선이 필요한 성능**을 보였습니다 (F1-Score: {metrics['f1_score'] * 100:.2f}%).\n\n")
 
-        f.write("### 장점\n\n")
-        f.write("- 정상 동작 패턴 학습을 통한 이상 탐지\n")
-        f.write("- 나노초 단위의 정밀한 예측\n")
-        f.write("- 장기 시계열 패턴 캡처 능력\n")
-        f.write("- 빠른 추론 속도로 실시간 모니터링 가능\n\n")
+        f.write("## 예측 vs 실제 비교 분석\n\n")
 
-        f.write("### 개선 방향\n\n")
-        if "false_positives" in metrics and metrics["false_positives"] > metrics["true_positives"]:
-            f.write("- 거짓 긍정(False Positive)이 많음 → 임계값(threshold) 조정 필요\n")
-        if "false_negatives" in metrics and metrics["false_negatives"] > metrics["true_positives"]:
-            f.write("- 거짓 부정(False Negative)이 많음 → 모델 재학습 또는 시퀀스 길이 증가 필요\n")
-        f.write("- 더 많은 학습 데이터로 모델 성능 향상\n")
-        f.write("- 하이퍼파라미터 튜닝 (시퀀스 길이, 채널 수, 커널 크기)\n")
-        f.write("- 앙상블 모델 고려 (TCN + LSTM, TCN + Autoencoder)\n\n")
+        # Calculate distribution
+        y_true = df["ground_truth"].astype(int)
+        y_pred = df["predicted"].astype(int)
+
+        total = len(df)
+        true_anomalies = y_true.sum()
+        pred_anomalies = y_pred.sum()
+        true_normal = total - true_anomalies
+        pred_normal = total - pred_anomalies
+
+        tp = metrics.get("true_positives", 0)
+        tn = metrics.get("true_negatives", 0)
+        fp = metrics.get("false_positives", 0)
+        fn = metrics.get("false_negatives", 0)
+        matches = tp + tn
+
+        f.write("| 구분 | 정상 | 이상 | 합계 |\n")
+        f.write("|------|------|------|------|\n")
+        f.write(f"| **실제 (Ground Truth)** | {true_normal}개 ({true_normal/total*100:.1f}%) | {true_anomalies}개 ({true_anomalies/total*100:.1f}%) | {total}개 |\n")
+        f.write(f"| **예측 (Predicted)** | {pred_normal}개 ({pred_normal/total*100:.1f}%) | {pred_anomalies}개 ({pred_anomalies/total*100:.1f}%) | {total}개 |\n")
+        f.write(f"| **일치 여부** | TN: {tn}개 | TP: {tp}개 | 일치: {matches}개 ({matches/total*100:.1f}%) |\n\n")
+
+        # Error analysis
+        if fp > 0 or fn > 0:
+            f.write("### 오류 분석\n\n")
+            if fp > 0:
+                f.write(f"- **False Positive (오탐)**: {fp}건 ({fp/total*100:.1f}%) - 정상을 이상으로 오판\n")
+            if fn > 0:
+                f.write(f"- **False Negative (미탐)**: {fn}건 ({fn/total*100:.1f}%) - 이상을 정상으로 오판\n")
+            f.write("\n")
 
         f.write("---\n\n")
         f.write(f"**리포트 생성**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")

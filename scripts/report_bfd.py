@@ -39,6 +39,49 @@ def load_predictions(predictions_path: Path) -> pd.DataFrame:
     return df
 
 
+def analyze_training_data(train_data_path: Path = None) -> dict:
+    """Analyze training data quality if available.
+
+    Args:
+        train_data_path: Path to training data directory
+
+    Returns:
+        Dictionary of training data statistics, or None if not available
+    """
+    if train_data_path is None or not train_data_path.exists():
+        return None
+
+    try:
+        import glob
+        parquet_files = glob.glob(str(train_data_path / "*.parquet"))
+        if not parquet_files:
+            return None
+
+        # Load all training data
+        dfs = [pd.read_parquet(f) for f in parquet_files]
+        train_df = pd.concat(dfs, ignore_index=True)
+
+        # Analyze
+        total = len(train_df)
+        normal = len(train_df[train_df["is_anomaly"] == False])
+        anomaly = len(train_df[train_df["is_anomaly"] == True])
+
+        # State distribution
+        state_dist = train_df["local_state"].value_counts().to_dict()
+
+        return {
+            "total": total,
+            "normal": normal,
+            "anomaly": anomaly,
+            "anomaly_rate": anomaly / total if total > 0 else 0,
+            "state_distribution": state_dist,
+            "has_issues": (anomaly == 0) or (total < 500),
+        }
+    except Exception as e:
+        print(f"Warning: Could not analyze training data: {e}")
+        return None
+
+
 def calculate_metrics(df: pd.DataFrame) -> dict:
     """Calculate comprehensive performance metrics.
 
@@ -97,12 +140,15 @@ def calculate_metrics(df: pd.DataFrame) -> dict:
     }
 
 
-def generate_markdown_report(df: pd.DataFrame, metrics: dict, output_path: Path) -> None:
+def generate_markdown_report(
+    df: pd.DataFrame, metrics: dict, train_stats: dict, output_path: Path
+) -> None:
     """Generate Korean Markdown report.
 
     Args:
         df: Predictions DataFrame
         metrics: Performance metrics
+        train_stats: Training data statistics (optional)
         output_path: Output file path
     """
     print(f"\nGenerating Markdown report...")
@@ -141,11 +187,54 @@ def generate_markdown_report(df: pd.DataFrame, metrics: dict, output_path: Path)
                 return "이상 탐지율이 낮은"
         return ""
 
-    # Get example predictions
-    true_positives = df[(df["true_label"] == True) & (df["predicted_label"] == True)].head(3)
-    true_negatives = df[(df["true_label"] == False) & (df["predicted_label"] == False)].head(3)
-    false_positives = df[(df["true_label"] == False) & (df["predicted_label"] == True)].head(3)
-    false_negatives = df[(df["true_label"] == True) & (df["predicted_label"] == False)].head(3)
+    # Get example predictions (more samples for better analysis)
+    true_positives = df[(df["true_label"] == True) & (df["predicted_label"] == True)].head(10)
+    true_negatives = df[(df["true_label"] == False) & (df["predicted_label"] == False)].head(10)
+    false_positives = df[(df["true_label"] == False) & (df["predicted_label"] == True)].head(10)
+    false_negatives = df[(df["true_label"] == True) & (df["predicted_label"] == False)].head(10)
+
+    # Analyze error patterns
+    fp_values = df[df["true_label"] == False & (df["predicted_label"] == True)]["value"] if len(false_positives) > 0 else pd.Series()
+    fn_values = df[df["true_label"] == True & (df["predicted_label"] == False)]["value"] if len(false_negatives) > 0 else pd.Series()
+
+    # Extract model state from evidence field
+    def extract_model_info(df):
+        """Extract threshold and likelihood from evidence field."""
+        try:
+            import json
+            import ast
+
+            thresholds = []
+            likelihoods = []
+
+            for evidence_str in df["evidence"].dropna():
+                try:
+                    # Try to parse as dict
+                    if isinstance(evidence_str, str):
+                        evidence = ast.literal_eval(evidence_str)
+                    else:
+                        evidence = evidence_str
+
+                    if isinstance(evidence, dict):
+                        if "anomaly_threshold" in evidence:
+                            thresholds.append(evidence["anomaly_threshold"])
+                        if "log_likelihood" in evidence:
+                            likelihoods.append(evidence["log_likelihood"])
+                except:
+                    continue
+
+            return {
+                "threshold": np.mean(thresholds) if thresholds else None,
+                "likelihood_mean": np.mean(likelihoods) if likelihoods else None,
+                "likelihood_std": np.std(likelihoods) if likelihoods else None,
+                "likelihood_min": np.min(likelihoods) if likelihoods else None,
+                "likelihood_max": np.max(likelihoods) if likelihoods else None,
+            }
+        except Exception as e:
+            print(f"Warning: Could not extract model info: {e}")
+            return {}
+
+    model_info = extract_model_info(df)
 
     # Generate report
     report = []
@@ -218,47 +307,83 @@ def generate_markdown_report(df: pd.DataFrame, metrics: dict, output_path: Path)
     report.append("- **FN (False Negative)**: 이상을 정상으로 잘못 판별한 수 (미탐)\n")
     report.append("- **TP (True Positive)**: 이상을 이상으로 올바르게 판별한 수\n\n")
 
-    # Interpretation
-    report.append("## 결과 해석\n\n")
-    report.append("### 강점\n\n")
+    # Prediction vs Actual Comparison
+    report.append("## 예측 vs 실제 비교 분석\n\n")
 
-    strengths = []
-    if metrics["accuracy"] >= 0.90:
-        strengths.append(f"- 전체 정확도가 {metrics['accuracy']*100:.1f}%로 매우 높음")
-    if metrics["precision"] >= 0.85:
-        strengths.append(f"- 정밀도가 {metrics['precision']*100:.1f}%로 오탐지가 적음")
-    if metrics["recall"] >= 0.85:
-        strengths.append(f"- 재현율이 {metrics['recall']*100:.1f}%로 이상 탐지율이 높음")
-    if metrics["fp"] == 0:
-        strengths.append("- 오탐지(FP)가 없어 신뢰성이 매우 높음")
-    if metrics["fn"] == 0:
-        strengths.append("- 미탐지(FN)가 없어 모든 이상을 탐지함")
+    # Overall distribution comparison
+    report.append("### 전체 분포 비교\n\n")
+    report.append("| 구분 | 정상 | 이상 | 합계 |\n")
+    report.append("|------|------|------|------|\n")
+    report.append(f"| **실제 (True Label)** | {metrics['total'] - metrics['n_true_anomalies']:,}개 "
+                  f"({(metrics['total'] - metrics['n_true_anomalies'])/metrics['total']*100:.1f}%) | "
+                  f"{metrics['n_true_anomalies']:,}개 "
+                  f"({metrics['n_true_anomalies']/metrics['total']*100:.1f}%) | "
+                  f"{metrics['total']:,}개 |\n")
+    report.append(f"| **예측 (Predicted)** | {metrics['total'] - metrics['n_pred_anomalies']:,}개 "
+                  f"({(metrics['total'] - metrics['n_pred_anomalies'])/metrics['total']*100:.1f}%) | "
+                  f"{metrics['n_pred_anomalies']:,}개 "
+                  f"({metrics['n_pred_anomalies']/metrics['total']*100:.1f}%) | "
+                  f"{metrics['total']:,}개 |\n")
+    report.append(f"| **일치 여부** | TN: {metrics['tn']:,}개 | TP: {metrics['tp']:,}개 | "
+                  f"일치: {metrics['tn'] + metrics['tp']:,}개 "
+                  f"({(metrics['tn'] + metrics['tp'])/metrics['total']*100:.1f}%) |\n")
+    report.append("\n")
 
-    if strengths:
-        report.append("\n".join(strengths) + "\n\n")
-    else:
-        report.append("- 기본적인 탐지 기능을 수행하고 있음\n\n")
+    # Error pattern analysis
+    if len(false_positives) > 0 or len(false_negatives) > 0:
+        report.append("### 오류 패턴 분석\n\n")
 
-    report.append("### 약점 및 개선 방향\n\n")
+        if len(false_positives) > 0:
+            fp_value_counts = fp_values.value_counts().head(5)
+            report.append(f"**False Positive (오탐) 패턴**: 정상 데이터를 이상으로 잘못 판별한 {len(fp_values):,}건 분석\n\n")
+            report.append("| BFD 상태 값 | 발생 횟수 | 비율 |\n")
+            report.append("|------------|----------|------|\n")
+            state_names = {0: "ADMIN_DOWN", 1: "DOWN", 2: "INIT", 3: "UP"}
+            for value, count in fp_value_counts.items():
+                state_name = state_names.get(int(value), f"Unknown({value})")
+                report.append(f"| {state_name} ({int(value)}) | {count:,}건 | {count/len(fp_values)*100:.1f}% |\n")
+            report.append("\n")
 
-    weaknesses = []
-    if metrics["precision"] < 0.70:
-        weaknesses.append(f"- 정밀도가 {metrics['precision']*100:.1f}%로 낮아 오탐지가 많음")
-        weaknesses.append("  - **개선방안**: 임계값(threshold) 조정, 더 많은 학습 데이터 확보")
-    if metrics["recall"] < 0.70:
-        weaknesses.append(f"- 재현율이 {metrics['recall']*100:.1f}%로 낮아 놓치는 이상이 많음")
-        weaknesses.append("  - **개선방안**: 모델 복잡도 증가, 이상 데이터 증강")
-    if metrics["fp"] > metrics["total"] * 0.1:
-        weaknesses.append(f"- 오탐지(FP)가 {metrics['fp']:,}건으로 많음 ({metrics['fp']/metrics['total']*100:.1f}%)")
-        weaknesses.append("  - **개선방안**: 임계값 상향 조정, 정상 데이터 학습 강화")
-    if metrics["fn"] > metrics["total"] * 0.1:
-        weaknesses.append(f"- 미탐지(FN)가 {metrics['fn']:,}건으로 많음")
-        weaknesses.append("  - **개선방안**: 다양한 이상 패턴 학습, 앙상블 모델 고려")
+        if len(false_negatives) > 0:
+            fn_value_counts = fn_values.value_counts().head(5)
+            report.append(f"**False Negative (미탐) 패턴**: 이상 데이터를 정상으로 잘못 판별한 {len(fn_values):,}건 분석\n\n")
+            report.append("| BFD 상태 값 | 발생 횟수 | 비율 |\n")
+            report.append("|------------|----------|------|\n")
+            state_names = {0: "ADMIN_DOWN", 1: "DOWN", 2: "INIT", 3: "UP"}
+            for value, count in fn_value_counts.items():
+                state_name = state_names.get(int(value), f"Unknown({value})")
+                report.append(f"| {state_name} ({int(value)}) | {count:,}건 | {count/len(fn_values)*100:.1f}% |\n")
+            report.append("\n")
 
-    if weaknesses:
-        report.append("\n".join(weaknesses) + "\n\n")
-    else:
-        report.append("- 현재 모델의 성능이 우수하여 특별한 개선이 필요하지 않음\n\n")
+    # Model state analysis
+    if model_info:
+        report.append("## 모델 상태 분석\n\n")
+
+        if model_info.get("threshold") is not None:
+            report.append(f"**이상 탐지 임계값 (Threshold)**: `{model_info['threshold']:.6e}`\n\n")
+
+        if model_info.get("likelihood_mean") is not None:
+            report.append("**Log-Likelihood 분포**:\n\n")
+            report.append("| 통계량 | 값 |\n")
+            report.append("|--------|----|\n")
+            report.append(f"| 평균 | {model_info['likelihood_mean']:.2e} |\n")
+            if model_info.get("likelihood_std") is not None:
+                report.append(f"| 표준편차 | {model_info['likelihood_std']:.2e} |\n")
+            if model_info.get("likelihood_min") is not None:
+                report.append(f"| 최소값 | {model_info['likelihood_min']:.2e} |\n")
+            if model_info.get("likelihood_max") is not None:
+                report.append(f"| 최대값 | {model_info['likelihood_max']:.2e} |\n")
+            report.append("\n")
+
+        # Threshold sensitivity analysis
+        if model_info.get("threshold") is not None and model_info.get("likelihood_mean") is not None:
+            threshold = model_info["threshold"]
+            likelihood_mean = model_info["likelihood_mean"]
+
+            if abs(threshold) < 1e-6:
+                report.append("⚠️ **임계값이 거의 0에 가까움** - 모델이 매우 민감하게 반응할 수 있습니다.\n\n")
+            elif abs(likelihood_mean) > abs(threshold) * 1000:
+                report.append("⚠️ **Likelihood 값이 임계값보다 훨씬 큼** - 대부분 샘플이 이상으로 판정될 수 있습니다.\n\n")
 
     # Examples
     report.append("## 예측 샘플\n\n")
@@ -295,31 +420,38 @@ def generate_markdown_report(df: pd.DataFrame, metrics: dict, output_path: Path)
             report.append(f"| {row['timestamp']} | {row['source_id']} | {row['value']:.2f} | {row['anomaly_score']:.3f} |\n")
         report.append("\n")
 
-    # Recommendations
-    report.append("## 권장사항\n\n")
+    # Training data quality analysis (if available)
+    if train_stats is not None:
+        report.append("## 학습 데이터 품질 분석\n\n")
 
-    if metrics["accuracy"] >= 0.90 and metrics["f1_score"] >= 0.85:
-        report.append("### ✅ 프로덕션 배포 가능\n\n")
-        report.append("현재 모델의 성능이 우수하여 실제 환경에 배포할 수 있는 수준입니다.\n\n")
-        report.append("**다음 단계**:\n")
-        report.append("1. 실제 BFD 세션 데이터로 추가 검증\n")
-        report.append("2. 프로덕션 환경 성능 모니터링 체계 구축\n")
-        report.append("3. 정기적인 재학습 주기 설정 (예: 월 1회)\n\n")
-    elif metrics["accuracy"] >= 0.80:
-        report.append("### ⚠️  개선 후 배포 권장\n\n")
-        report.append("기본적인 성능은 달성했으나, 추가 개선이 필요합니다.\n\n")
-        report.append("**개선 방안**:\n")
-        report.append("1. 하이퍼파라미터 튜닝 (learning rate, hidden size, epochs)\n")
-        report.append("2. 더 많은 학습 데이터 수집 (현재보다 2-3배)\n")
-        report.append("3. 데이터 증강 기법 적용\n\n")
-    else:
-        report.append("### ❌ 추가 개발 필요\n\n")
-        report.append("현재 성능으로는 프로덕션 배포가 어렵습니다.\n\n")
-        report.append("**필수 개선 작업**:\n")
-        report.append("1. 모델 아키텍처 재검토 (LSTM → Transformer, Ensemble 등)\n")
-        report.append("2. 학습 데이터 품질 점검 및 정제\n")
-        report.append("3. 피처 엔지니어링 강화\n")
-        report.append("4. 전문가와 함께 이상 패턴 재정의\n\n")
+        report.append("| 항목 | 값 |\n")
+        report.append("|------|----|\n")
+        report.append(f"| **전체 샘플 수** | {train_stats['total']:,}개 |\n")
+        report.append(f"| **정상 샘플** | {train_stats['normal']:,}개 ({train_stats['normal']/train_stats['total']*100:.1f}%) |\n")
+        report.append(f"| **이상 샘플** | {train_stats['anomaly']:,}개 ({train_stats['anomaly_rate']*100:.1f}%) |\n")
+        report.append("\n")
+
+        if train_stats.get("state_distribution"):
+            report.append("**상태 분포**:\n\n")
+            state_names = {0: "ADMIN_DOWN", 1: "DOWN", 2: "INIT", 3: "UP"}
+            for state_value, count in sorted(train_stats["state_distribution"].items()):
+                state_name = state_names.get(state_value, f"Unknown({state_value})")
+                report.append(f"- {state_name} ({state_value}): {count:,}개\n")
+            report.append("\n")
+
+        # Quality warnings
+        if train_stats.get("has_issues"):
+            report.append("### ⚠️ 데이터 품질 경고\n\n")
+            issues = []
+            if train_stats['anomaly'] == 0:
+                issues.append("- ❌ **이상 샘플이 없음**: 모델이 이상 패턴을 학습할 수 없습니다.")
+            if train_stats['total'] < 500:
+                issues.append(f"- ⚠️ **학습 데이터 부족**: 현재 {train_stats['total']:,}개, 권장 1,000개 이상")
+            if train_stats['anomaly_rate'] < 0.1 and train_stats['anomaly'] > 0:
+                issues.append(f"- ⚠️ **이상 샘플 비율 낮음**: 현재 {train_stats['anomaly_rate']*100:.1f}%, 권장 15-30%")
+
+            if issues:
+                report.append("\n".join(issues) + "\n\n")
 
     # Footer
     report.append("---\n\n")
@@ -357,6 +489,13 @@ def main():
         help="Output report path (default: results/bfd/report.md)",
     )
 
+    parser.add_argument(
+        "--train-data",
+        type=Path,
+        default=None,
+        help="Path to training data directory (optional, for quality analysis)",
+    )
+
     args = parser.parse_args()
 
     # Load predictions
@@ -366,8 +505,19 @@ def main():
     print("\nCalculating performance metrics...")
     metrics = calculate_metrics(df)
 
+    # Analyze training data (if provided)
+    train_stats = None
+    if args.train_data:
+        print(f"\nAnalyzing training data from: {args.train_data}")
+        train_stats = analyze_training_data(args.train_data)
+        if train_stats:
+            print(f"  Training samples: {train_stats['total']:,} "
+                  f"(Normal: {train_stats['normal']:,}, Anomaly: {train_stats['anomaly']:,})")
+        else:
+            print("  Warning: Could not analyze training data")
+
     # Generate report
-    generate_markdown_report(df, metrics, args.output)
+    generate_markdown_report(df, metrics, train_stats, args.output)
 
     print(f"\n✅ Report generation completed!")
     print(f"\nGenerated files:")

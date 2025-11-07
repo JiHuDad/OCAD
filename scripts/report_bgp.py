@@ -271,24 +271,35 @@ def generate_report(df: pd.DataFrame, metrics: Dict[str, Any], anomaly_types: Di
 
     report.append("")
 
-    # Recommendations
-    report.append("## 개선 권장사항")
+    # Prediction vs Actual Comparison
+    report.append("## 예측 vs 실제 비교 분석")
     report.append("")
 
-    if metrics["precision"] < 0.8:
-        report.append("1. **Precision 개선**: False Positive가 많습니다. 임계값(threshold) 조정이 필요합니다.")
-    if metrics["recall"] < 0.8:
-        report.append("1. **Recall 개선**: False Negative가 많습니다. 더 많은 학습 데이터나 모델 복잡도 증가가 필요합니다.")
+    total = len(df)
+    true_anomalies = df["ground_truth"].sum()
+    pred_anomalies = df["predicted_anomaly"].sum()
+    true_normal = total - true_anomalies
+    pred_normal = total - pred_anomalies
 
-    if len(anomaly_types) > 0:
-        # Find weakest anomaly type
-        weakest = min(anomaly_types.items(), key=lambda x: x[1]["f1_score"])
-        if weakest[1]["f1_score"] < 0.7:
-            report.append(f"1. **{weakest[0]} 탐지 강화**: 이 유형의 탐지 성능이 가장 낮습니다. 해당 유형의 학습 데이터를 보강하세요.")
+    cm = metrics["confusion_matrix"]
+    matches = cm["tp"] + cm["tn"]
 
-    report.append("1. **GNN 하이퍼파라미터 튜닝**: hidden_dim, num_layers, learning_rate 조정으로 성능 개선 가능")
-    report.append("1. **앙상블 모델**: HMM이나 LSTM과 결합하여 탐지 성능 향상")
+    report.append("| 구분 | 정상 | 이상 | 합계 |")
+    report.append("|------|------|------|------|")
+    report.append(f"| **실제 (Ground Truth)** | {true_normal}개 ({true_normal/total*100:.1f}%) | {true_anomalies}개 ({true_anomalies/total*100:.1f}%) | {total}개 |")
+    report.append(f"| **예측 (Predicted)** | {pred_normal}개 ({pred_normal/total*100:.1f}%) | {pred_anomalies}개 ({pred_anomalies/total*100:.1f}%) | {total}개 |")
+    report.append(f"| **일치 여부** | TN: {cm['tn']}개 | TP: {cm['tp']}개 | 일치: {matches}개 ({matches/total*100:.1f}%) |")
     report.append("")
+
+    # Error analysis
+    if cm["fp"] > 0 or cm["fn"] > 0:
+        report.append("### 오류 분석")
+        report.append("")
+        if cm["fp"] > 0:
+            report.append(f"- **False Positive (오탐)**: {cm['fp']}건 ({cm['fp']/total*100:.1f}%) - 정상을 이상으로 오판")
+        if cm["fn"] > 0:
+            report.append(f"- **False Negative (미탐)**: {cm['fn']}건 ({cm['fn']/total*100:.1f}%) - 이상을 정상으로 오판")
+        report.append("")
 
     # Footer
     report.append("---")

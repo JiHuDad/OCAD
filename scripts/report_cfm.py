@@ -294,22 +294,39 @@ def generate_markdown_report(
         lines.append(f"- **가장 어려운 이상**: {worst_anom_name} (재현율: {worst_anom[1]['recall']*100:.2f}%)")
         lines.append("")
 
-    # Recommendations
-    lines.append("## 권장 사항")
+    # Prediction vs Actual Comparison
+    lines.append("## 예측 vs 실제 비교 분석")
     lines.append("")
 
-    if overall is not None and overall['false_positives'] > overall['true_positives']:
-        lines.append("1. **임계값 조정**: False Positive가 많습니다. 탐지 임계값을 높이는 것을 고려하세요.")
+    if overall is not None:
+        total = overall['total']
+        true_anomalies = overall['true_positives'] + overall['false_negatives']
+        pred_anomalies = overall['true_positives'] + overall['false_positives']
+        true_normal = total - true_anomalies
+        pred_normal = total - pred_anomalies
 
-    if overall is not None and overall['false_negatives'] > overall['true_positives']:
-        lines.append("1. **모델 재학습**: False Negative가 많습니다. 더 많은 학습 데이터나 하이퍼파라미터 조정이 필요합니다.")
+        tp = overall['true_positives']
+        tn = overall['true_negatives']
+        fp = overall['false_positives']
+        fn = overall['false_negatives']
+        matches = tp + tn
 
-    if per_metric_perf:
-        worst_metrics = [m for m, p in per_metric_perf.items() if p['f1_score'] < 0.6]
-        if worst_metrics:
-            worst_names = [METRIC_NAMES_KR.get(m, m) for m in worst_metrics]
-            lines.append(f"2. **메트릭별 개선**: {', '.join(worst_names)} 메트릭의 성능이 낮습니다. "
-                        "해당 메트릭에 대한 학습 데이터를 추가로 수집하거나 특화 모델을 고려하세요.")
+        lines.append("| 구분 | 정상 | 이상 | 합계 |")
+        lines.append("|------|------|------|------|")
+        lines.append(f"| **실제 (Ground Truth)** | {true_normal}개 ({true_normal/total*100:.1f}%) | {true_anomalies}개 ({true_anomalies/total*100:.1f}%) | {total}개 |")
+        lines.append(f"| **예측 (Predicted)** | {pred_normal}개 ({pred_normal/total*100:.1f}%) | {pred_anomalies}개 ({pred_anomalies/total*100:.1f}%) | {total}개 |")
+        lines.append(f"| **일치 여부** | TN: {tn}개 | TP: {tp}개 | 일치: {matches}개 ({matches/total*100:.1f}%) |")
+        lines.append("")
+
+        # Error analysis
+        if fp > 0 or fn > 0:
+            lines.append("### 오류 분석")
+            lines.append("")
+            if fp > 0:
+                lines.append(f"- **False Positive (오탐)**: {fp}건 ({fp/total*100:.1f}%) - 정상을 이상으로 오판")
+            if fn > 0:
+                lines.append(f"- **False Negative (미탐)**: {fn}건 ({fn/total*100:.1f}%) - 이상을 정상으로 오판")
+            lines.append("")
 
     lines.append("")
     lines.append("## 기술적 세부사항")

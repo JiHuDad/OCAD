@@ -12,7 +12,7 @@ from .core.config import Settings, load_config
 from .core.models import Endpoint, EndpointRole
 from .system.orchestrator import SystemOrchestrator
 
-app = typer.Typer(help="ORAN CFM-Lite AI Anomaly Detection System")
+app = typer.Typer(help="Network Protocol AI Anomaly Detection System (OCAD)")
 console = Console()
 
 
@@ -23,7 +23,7 @@ def run(
     port: int = typer.Option(8080, "--port", help="API port"),
 ):
     """Run the OCAD system with API server."""
-    console.print("[bold green]Starting ORAN CFM-Lite AI Anomaly Detection System[/bold green]")
+    console.print("[bold green]Starting Network Protocol AI Anomaly Detection System (OCAD)[/bold green]")
     
     # Load configuration
     if config_file:

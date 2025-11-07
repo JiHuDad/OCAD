@@ -1,8 +1,8 @@
 """
-ORAN CFM-Lite AI Anomaly Detection System
+Network Protocol AI Anomaly Detection System (OCAD)
 
-A capability-driven hybrid anomaly detection system for ORAN environments
-with reduced CFM functionality.
+A plugin-based hybrid anomaly detection system for various network protocols
+including BFD, BGP, PTP, and CFM.
 """
 
 __version__ = "0.1.0"

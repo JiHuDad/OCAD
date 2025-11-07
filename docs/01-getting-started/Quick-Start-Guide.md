@@ -16,7 +16,7 @@
 
 ## 개요
 
-OCAD (ORAN CFM-Lite AI Anomaly Detection System)는 ORAN 네트워크에서 CFM 메트릭을 기반으로 이상을 탐지하는 시스템입니다.
+OCAD (네트워크 프로토콜 AI 이상 탐지 시스템)는 BFD, BGP, PTP, CFM 등 다양한 네트워크 프로토콜의 이상을 탐지하는 플러그인 기반 시스템입니다.
 
 **주요 특징:**
 - ✅ 파일 기반 입력 지원 (CSV, Excel, Parquet)
@@ -29,7 +29,7 @@ OCAD (ORAN CFM-Lite AI Anomaly Detection System)는 ORAN 네트워크에서 CFM 
 
 ## 파일 기반 입력으로 시작하기
 
-실제 ORAN 장비나 실시간 수집 없이도 OCAD를 사용할 수 있습니다!
+실제 네트워크 장비나 실시간 수집 없이도 OCAD를 사용할 수 있습니다!
 
 ### 1. 환경 설정
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-**프로젝트 현황**: OCAD 시스템은 기본 아키텍처가 완성되어 있으며, 핵심 파이프라인(수집 → 피처 엔지니어링 → 탐지 → 알람)이 정상 동작합니다. 실제 ORAN 장비 없이도 시뮬레이터를 통한 완전한 검증이 가능합니다.
+**프로젝트 현황**: OCAD 시스템은 기본 아키텍처가 완성되어 있으며, 핵심 파이프라인(수집 → 피처 엔지니어링 → 탐지 → 알람)이 정상 동작합니다. 실제 네트워크 장비 없이도 시뮬레이터를 통한 완전한 검증이 가능합니다.
 
 **최근 작업** (2025-10-30):
 
@@ -97,6 +97,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - **README.md 업데이트**: 플러그인 시스템 섹션 추가 (지원 프로토콜 표, 빠른 시작 명령어, 문서 링크)
   - **CLAUDE.md 업데이트**: Phase 4 완료 기록
 
+**최근 작업** (2025-11-07):
+
+- ✅ **프로토콜별 통합 쉘 스크립트 구축**
+  - `scripts/train.sh`: 프로토콜별 모델 학습 통합 스크립트
+    - 사용법: `./scripts/train.sh --protocol <bfd|bgp|ptp|cfm> --data <dir> --output <model-dir>`
+    - 자동 모델 타입 탐지 (BFD: HMM/LSTM, BGP: GNN, PTP: TCN, CFM: Isolation Forest)
+    - 메타데이터 자동 생성 (학습 일시, 버전 정보)
+  - `scripts/infer.sh`: 프로토콜별 추론 및 리포트 자동 생성
+    - 사용법: `./scripts/infer.sh --protocol <protocol> --model <dir> --data <dir>`
+    - 타임스탬프 자동 생성 (`results/<protocol>/infer_YYYYMMDD_HHMMSS/`)
+    - 추론 + 리포트 자동 파이프라인
+- ✅ **CFM 인터페이스 통일 (다른 프로토콜과 일관성 확보)**
+  - `scripts/infer_cfm_isoforest.py` 대폭 수정:
+    - Before: `--val-normal`, `--val-anomaly` (이중 구조)
+    - After: `--model`, `--data`, `--output` (통일된 인터페이스)
+    - Validation/Production 모드 자동 감지 (`is_anomaly` 컬럼 유무로 판단)
+  - `scripts/report_cfm.py` 간소화:
+    - `--metrics` 옵션 제거 (중복 데이터 제거)
+    - predictions.csv에서 직접 메트릭 계산
+    - is_anomaly 없어도 리포트 생성 가능 (Production 모드)
+  - `scripts/train.sh` CFM 부분 수정:
+    - `--data` → `--train-data` (train_cfm_isoforest.py 옵션에 맞춤)
+    - `--output` → `--output-dir` (다중 모델 파일 지원)
+    - 학습 데이터 파일 자동 탐색 (디렉토리에서 parquet/csv 찾기)
+- ✅ **is_anomaly 컬럼의 올바른 역할 정립**
+  - **Validation 모드**: is_anomaly 있음 → 성능 평가 포함 (Accuracy, Precision, Recall, F1)
+  - **Production 모드**: is_anomaly 없음 → 순수 예측만 수행
+  - 모든 프로토콜(BFD, BGP, PTP, CFM)에 일관되게 적용
+  - 이전의 혼란스러운 이중 구조 제거 (파일명 분리 + 컬럼 분리)
+- ✅ **버그 수정**
+  - PTP: TCN 탐지기 들여쓰기 오류 수정 (Chomp1d, TemporalBlock, TCNModel)
+  - PTP: report_ptp.py 컬럼명 불일치 수정 (`ground_truth` vs `is_anomaly_actual`)
+  - PTP: report_ptp.py 누락된 `df` 파라미터 추가
+  - CFM: report_cfm.py 키 이름 수정 (`total` → `total_evaluated`)
+
 **다음 단계**:
 1. ✅ **Phase 0 (Week 1-2)**: 플러그인 인프라 구축 완료!
 2. ✅ **Phase 1 (Week 3-4)**: BFD 프로토콜 지원 완료!
@@ -121,15 +156,15 @@ When running Python commands, scripts, or tests, ensure the virtual environment 
 
 ## Project Overview
 
-OCAD (ORAN CFM-Lite AI Anomaly Detection System) is a hybrid anomaly detection system for ORAN networks that uses reduced CFM functionality. It provides capability-driven monitoring with rule-based, changepoint (CUSUM/PELT), prediction-residual (TCN/LSTM), and multivariate detection methods.
+OCAD (Network Protocol AI Anomaly Detection System) is a plugin-based anomaly detection system that monitors various network protocols including BFD, BGP, PTP, and CFM. It provides capability-driven monitoring with rule-based, changepoint (CUSUM/PELT), prediction-residual (TCN/LSTM), and multivariate detection methods.
 
-**프로토콜 확장 (2025-11-05)**: OCAD는 CFM을 넘어 BFD, BGP, PTP 등 다양한 네트워크 프로토콜로 확장 중입니다. **플러그인 기반 아키텍처**를 통해 각 프로토콜별 특성에 맞는 AI 모델을 독립적으로 적용할 수 있습니다. 상세 계획은 [PROTOCOL-ANOMALY-DETECTION-PLAN.md](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md)를 참조하세요.
+**프로토콜 확장 (2025-11-05)**: OCAD는 **플러그인 기반 아키텍처**를 통해 다양한 네트워크 프로토콜(BFD, BGP, PTP, CFM 등)을 지원하며, 각 프로토콜별 특성에 맞는 AI 모델을 독립적으로 적용할 수 있습니다. 상세 계획은 [PROTOCOL-ANOMALY-DETECTION-PLAN.md](docs/PROTOCOL-ANOMALY-DETECTION-PLAN.md)를 참조하세요.
 
 ## Architecture
 
 The system follows a pipeline architecture:
 ```
-O-RU/O-DU → Capability Detector → Collectors → Feature Engine → Detectors → Alerts
+Network Equipment → Protocol Adapters → Collectors → Feature Engine → Detectors → Alerts
 ```
 
 ### Core Components

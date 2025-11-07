@@ -1,6 +1,6 @@
 # OCAD 문서 인덱스
 
-**ORAN CFM-Lite AI Anomaly Detection System** 문서 모음입니다.
+**네트워크 프로토콜 AI 이상 탐지 시스템 (OCAD)** 문서 모음입니다.
 
 ---
 
@@ -13,8 +13,8 @@ OCAD를 처음 사용하신다면 다음 순서로 읽어보세요:
 2. [학습-추론 워크플로우](02-user-guides/Training-Inference-Workflow.md) - 학습과 추론의 전체 흐름
 3. [학습 및 추론 개요](04-training-inference/Overview.md) - 학습-추론 분리 아키텍처 이해
 
-### 👨‍💼 CFM 담당자
-실제 ORAN 장비에서 데이터를 수집하시려면:
+### 👨‍💼 프로토콜 데이터 담당자
+실제 네트워크 장비에서 데이터를 수집하시려면:
 
 1. [CFM 데이터 요구사항](03-data-management/CFM-Data-Requirements.md) - 수집해야 할 메트릭
 2. [데이터 형식 명세](03-data-management/Data-Format-Specification.md) - CSV/Excel/Parquet 형식

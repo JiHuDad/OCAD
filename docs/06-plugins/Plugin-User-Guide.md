@@ -720,6 +720,107 @@ detectors:
           anomaly_threshold: 0.6  # 기본 0.75에서 낮춤
 ```
 
+### 예제 4: 통합 쉘 스크립트 사용 (⭐ 권장!)
+
+**시나리오**: 프로토콜별 학습/추론을 간단한 명령어로 수행
+
+OCAD는 **통합 쉘 스크립트**를 제공하여 복잡한 파이프라인을 단순화합니다.
+
+#### CFM 프로토콜 예제
+
+**1단계: 학습 데이터 생성**
+```bash
+# CFM 학습 데이터 생성 (자동으로 생성됨 or 직접 준비)
+# data/cfm/train/ 디렉토리에 parquet 파일 위치
+```
+
+**2단계: 모델 학습**
+```bash
+./scripts/train.sh \
+    --protocol cfm \
+    --data data/cfm/train \
+    --output models/cfm/v1.0.0
+
+# 생성되는 파일:
+#   models/cfm/v1.0.0/cfm_udp_echo_rtt_ms_v1.0.0.pkl
+#   models/cfm/v1.0.0/cfm_ecpri_delay_us_v1.0.0.pkl
+#   models/cfm/v1.0.0/cfm_lbm_rtt_ms_v1.0.0.pkl
+#   models/cfm/v1.0.0/metadata.json
+```
+
+**3단계: 추론 실행 (Validation 모드)**
+```bash
+./scripts/infer.sh \
+    --protocol cfm \
+    --model models/cfm/v1.0.0 \
+    --data data/cfm/val
+
+# 결과: results/cfm/infer_20251107_143022/
+#   - predictions.csv (is_anomaly 컬럼 포함)
+#   - report.md (성능 평가 포함)
+```
+
+**4단계: 실제 운영 데이터로 추론 (Production 모드)**
+```bash
+./scripts/infer.sh \
+    --protocol cfm \
+    --model models/cfm/v1.0.0 \
+    --data data/cfm/production
+
+# 결과: results/cfm/infer_20251107_143530/
+#   - predictions.csv (is_anomaly 컬럼 없음)
+#   - report.md (예측 결과만 표시)
+```
+
+#### BFD 프로토콜 예제
+
+```bash
+# 1. HMM 모델 학습 (기본)
+./scripts/train.sh \
+    --protocol bfd \
+    --data data/bfd/train \
+    --output models/bfd/hmm_v1.0.0
+
+# 2. LSTM 모델 학습
+./scripts/train.sh \
+    --protocol bfd \
+    --model-type lstm \
+    --data data/bfd/train \
+    --output models/bfd/lstm_v1.0.0
+
+# 3. 추론 실행
+./scripts/infer.sh \
+    --protocol bfd \
+    --model models/bfd/hmm_v1.0.0 \
+    --data data/bfd/val
+```
+
+#### PTP 프로토콜 예제
+
+```bash
+# 1. TCN 모델 학습
+./scripts/train.sh \
+    --protocol ptp \
+    --data data/ptp/train \
+    --output models/ptp/tcn_v1.0.0
+
+# 2. 추론 실행
+./scripts/infer.sh \
+    --protocol ptp \
+    --model models/ptp/tcn_v1.0.0 \
+    --data data/ptp/val
+
+# 결과: results/ptp/infer_YYYYMMDD_HHMMSS/
+#   - predictions.csv
+#   - report.md
+```
+
+**장점**:
+- ✅ **간결함**: 복잡한 Python 명령어 대신 간단한 쉘 스크립트
+- ✅ **일관성**: 모든 프로토콜(BFD, BGP, PTP, CFM)에 동일한 인터페이스
+- ✅ **자동화**: 타임스탬프 자동 생성, 리포트 자동 생성
+- ✅ **유연성**: Validation/Production 모드 자동 감지
+
 ---
 
 ## 문제 해결

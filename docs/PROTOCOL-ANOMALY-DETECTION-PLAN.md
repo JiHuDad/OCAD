@@ -12,7 +12,7 @@
 ### 현재 (OCAD)
 - **단일 프로토콜**: CFM (Connectivity Fault Management) 전용
 - **고정 메트릭**: UDP Echo, eCPRI, LBM, CCM
-- **특화 시스템**: ORAN 네트워크 환경
+- **특화 시스템**: 초기 CFM 중심 설계
 
 ### 목표 (PADIT)
 - **다중 프로토콜**: CFM, BFD, BGP, PTP, 기타 커스텀 프로토콜
@@ -961,29 +961,74 @@ tail -f logs/test_*/summary/summary.log
 
 ---
 
+## 📈 구현 현황 (2025-11-07 업데이트)
+
+### ✅ 완료된 작업
+
+#### Phase 0-4: 플러그인 시스템 구축 완료 (2025-11-05)
+- ✅ 플러그인 인프라 (ProtocolAdapter, DetectorPlugin)
+- ✅ BFD 프로토콜 지원 (LSTM, HMM)
+- ✅ CLI 명령어 (`list-plugins`, `plugin-info`, `enable-plugin`, `test-plugin`, `detect`)
+- ✅ 통합 테스트 및 문서화 (4개 문서 작성)
+
+#### 프로토콜별 통합 쉘 스크립트 구축 (2025-11-07)
+- ✅ **`scripts/train.sh`**: 프로토콜별 모델 학습 통합
+  - 사용법: `./scripts/train.sh --protocol <protocol> --data <dir> --output <model-dir>`
+  - 지원 프로토콜: BFD, BGP, PTP, CFM
+  - 자동 모델 타입 탐지, 메타데이터 생성
+
+- ✅ **`scripts/infer.sh`**: 프로토콜별 추론 및 리포트 자동 생성
+  - 사용법: `./scripts/infer.sh --protocol <protocol> --model <dir> --data <dir>`
+  - 타임스탬프 자동 생성, 리포트 자동 파이프라인
+
+#### CFM 인터페이스 통일 (2025-11-07)
+- ✅ **일관된 인터페이스**: 모든 프로토콜과 동일 (`--model`, `--data`, `--output`)
+- ✅ **중복 제거**: `--metrics` 옵션 제거 (predictions.csv에서 직접 계산)
+- ✅ **모드 자동 감지**: Validation/Production 모드 (is_anomaly 유무로 판단)
+
+### 📊 프로토콜별 구현 상태
+
+| 프로토콜 | 어댑터 | 탐지기 | 학습 스크립트 | 추론 스크립트 | 리포트 | 상태 |
+|---------|-------|--------|-------------|-------------|--------|------|
+| **CFM** | ✅ | ✅ Isolation Forest | ✅ train.sh | ✅ infer.sh | ✅ | **완료** |
+| **BFD** | ✅ | ✅ LSTM, HMM | ✅ train.sh | ✅ infer.sh | ✅ | **완료** |
+| **PTP** | ⏳ | ✅ TCN | ✅ train.sh | ✅ infer.sh | ✅ | **진행중** |
+| **BGP** | ⏳ | ⏳ GNN | ⏳ | ⏳ | ⏳ | **Phase 2** |
+
+### 🎯 남은 작업
+
+#### Phase 2: BGP 프로토콜 지원 (진행 예정)
+- BGP 어댑터 구현 (AS-path 분석)
+- GNN 탐지기 구현
+- BGP 데이터 생성 스크립트
+- 통합 테스트
+
+#### Phase 3: PTP 프로토콜 완성 (진행 예정)
+- PTP 어댑터 구현 (시간 동기화)
+- TCN 탐지기 통합 (CFM TCN 재사용)
+- PTP 데이터 생성 스크립트
+
+---
+
 ## 🚀 다음 단계
 
 ### 즉시 (이번 주)
-1. **Phase 0 시작**: 플러그인 인프라 구축
-   - `ocad/plugins/base.py`, `registry.py` 작성
-   - 디렉토리 구조 생성
-   - CFM 어댑터를 플러그인으로 마이그레이션
-
-2. **문서 업데이트**:
-   - CLAUDE.md 업데이트 (플러그인 섹션 추가)
-   - README.md 업데이트 (지원 프로토콜 목록)
+1. ~~**Phase 0 시작**: 플러그인 인프라 구축~~ ✅ 완료
+2. ~~**문서 업데이트**~~ ✅ 완료
+3. **BGP Phase 2 준비**: GNN 모델 연구 및 설계
 
 ### 단기 (1-2개월)
-- **Phase 1**: BFD 프로토콜 + LSTM/HMM 모델
-- **Phase 2**: BGP 프로토콜 + GNN 모델
+- ~~**Phase 1**: BFD 프로토콜 + LSTM/HMM 모델~~ ✅ 완료
+- **Phase 2**: BGP 프로토콜 + GNN 모델 (진행 예정)
 
 ### 중기 (3-4개월)
-- **Phase 3**: PTP 프로토콜 + TCN 재사용
-- **Phase 4**: 통합 테스트 및 문서화
+- **Phase 3**: PTP 프로토콜 + TCN 재사용 (일부 완료)
+- ~~**Phase 4**: 통합 테스트 및 문서화~~ ✅ 완료
 
 ---
 
 **작성자**: Claude Code
-**날짜**: 2025-11-05
-**버전**: 1.0.0
-**상태**: 🎯 실행 준비 완료
+**최초 작성**: 2025-11-05
+**최종 업데이트**: 2025-11-07
+**버전**: 1.1.0
+**상태**: 🎯 Phase 0-1 완료, Phase 2-3 진행중

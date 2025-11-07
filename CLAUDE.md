@@ -229,6 +229,15 @@ pytest tests/integration/test_pipeline.py -v
 
 # Run single test function
 pytest tests/unit/test_collectors.py::test_udp_echo_collector -v
+
+# Simple algorithm-only test (minimal dependencies)
+python3 scripts/simple_test.py
+
+# System integration test
+python3 scripts/test_system_integration.py
+
+# Inference performance test (compare online vs pre-trained)
+python3 scripts/test_inference_performance.py
 ```
 
 ### Code Quality
@@ -439,6 +448,19 @@ The system supports complete validation without actual ORAN equipment through si
 - **Anomaly injection**: Inject spikes, drifts, packet loss for validation
 - **Complete pipeline testing**: All stages from collection to alerting work in simulation mode
 
+## Documentation
+
+Comprehensive guides are available in the `docs/` directory:
+
+- **[AI-Models-Guide.md](docs/AI-Models-Guide.md)**: Complete guide to AI models used (Rule-based, Changepoint, Residual, Multivariate detectors)
+- **[Operations-Guide.md](docs/Operations-Guide.md)**: Operator guide for understanding alerts and troubleshooting
+- **[Logging-Guide.md](docs/Logging-Guide.md)**: Detailed logging system architecture and usage
+- **[API.md](docs/API.md)**: REST API endpoint specifications
+- **[Training-Inference-Separation-Design.md](docs/Training-Inference-Separation-Design.md)**: Detailed design document for the training-inference separation architecture
+- **Phase Implementation Summaries**: Phase1-4 implementation progress reports
+
+When adding new features or modifying existing ones, consult these guides for context on system behavior and architecture decisions.
+
 ## Training-Inference Separation (NEW)
 
 **Important Architecture Change**: The system is transitioning from online learning to separated training-inference architecture.
@@ -483,6 +505,15 @@ python scripts/generate_training_data.py \
     --duration-hours 24 \
     --anomaly-rate 0.1
 
+# View and inspect generated training data
+python scripts/view_training_data.py \
+    --data-path data/processed/timeseries_train.parquet
+
+# Batch train all models (automated pipeline)
+./scripts/train_all_models.sh
+
+# Or train individual models:
+
 # Train TCN models
 python scripts/train_tcn_model.py \
     --metric-type udp_echo \
@@ -500,6 +531,9 @@ python scripts/train_isolation_forest.py \
 python scripts/evaluate_models.py \
     --model-path models/tcn/udp_echo_v1.0.0.pth \
     --test-data data/processed/timeseries_test.parquet
+
+# Compare inference performance (online vs pre-trained)
+python scripts/test_inference_performance.py
 ```
 
 ### Using Pre-trained Models
